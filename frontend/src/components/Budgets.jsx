@@ -48,7 +48,7 @@ const Budgets = () => {
   const addBudget = async (e) => {
     e.preventDefault();
     if (!bCategory || !bAmount) return;
-    const month = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const month = new Date().toISOString().slice(0, 7);
     
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/budgets`, {
@@ -93,87 +93,146 @@ const Budgets = () => {
     } catch (err) {}
   };
 
-  if (loading) return <div style={{ textAlign: 'center', marginTop: '3rem' }}>Loading...</div>;
+  if (loading) return (
+    <div className="flex items-center justify-center p-10 h-64">
+      <h2 className="text-slate-400 animate-pulse text-lg">Loading targets...</h2>
+    </div>
+  );
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-      {/* BUDGETS SETTINGS */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-        <div className="glass-panel">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-            <Target size={24} color="var(--primary)" /> Monthly Budgets
+    <div className="flex flex-col gap-6">
+      
+      {/* Header */}
+      <div className="glass-panel p-6 shadow-none bg-transparent border-0 !p-0">
+        <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Budgets & Goals</h2>
+        <p className="text-slate-400 text-sm">Set category limits and track your savings</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* BUDGETS SETTINGS */}
+        <div className="glass-panel p-6 flex flex-col gap-6">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Target size={24} className="text-blue-400" /> Monthly Budgets
           </h2>
           
-          <form onSubmit={addBudget} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-            <input type="text" className="form-control" placeholder="Category (e.g. Food)" value={bCategory} onChange={e => setBCategory(e.target.value)} style={{ flex: 2 }} required />
-            <input type="number" className="form-control" placeholder="Limit" value={bAmount} onChange={e => setBAmount(e.target.value)} style={{ flex: 1 }} required />
-            <button type="submit" className="btn" style={{ width: 'auto', padding: '0 1rem' }}><Plus size={20} /></button>
+          <form onSubmit={addBudget} className="flex gap-3 items-start bg-slate-900/30 p-4 rounded-xl border border-slate-700/30">
+            <input 
+              type="text" 
+              className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm placeholder:text-slate-500 flex-[2]" 
+              placeholder="Category (e.g. Food)" 
+              value={bCategory} 
+              onChange={e => setBCategory(e.target.value)} 
+              required 
+            />
+            <input 
+              type="number" 
+              className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm placeholder:text-slate-500 flex-[1]" 
+              placeholder="Limit ₹" 
+              value={bAmount} 
+              onChange={e => setBAmount(e.target.value)} 
+              required 
+            />
+            <button type="submit" className="p-2.5 bg-blue-500 hover:bg-blue-400 text-white rounded-lg shadow-lg shadow-blue-500/20 transition-all transform hover:-translate-y-0.5" title="Add Budget">
+              <Plus size={20} />
+            </button>
           </form>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {budgets.length === 0 ? <p style={{ color: 'var(--text-muted)' }}>No budgets set.</p> : 
+          <div className="flex flex-col gap-5 mt-2">
+            {budgets.length === 0 ? (
+              <div className="py-8 text-center border-2 border-dashed border-slate-700/50 rounded-xl">
+                <p className="text-slate-500">No active budgets set.</p>
+              </div>
+            ) : 
               budgets.map(b => {
                 const spent = expensesByCategory[b.category] || 0;
                 const percent = Math.min((spent / b.amount) * 100, 100);
                 const isOver = spent > b.amount;
                 return (
-                  <div key={b.id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                      <span style={{ fontWeight: 600 }}>{b.category}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                        <span style={{ color: isOver ? 'var(--danger)' : 'var(--text-main)' }}>${spent.toFixed(2)}</span> / ${b.amount}
-                        <Trash2 size={14} style={{ marginLeft: '1rem', cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => deleteItem('budget', b.id)} />
-                      </span>
+                  <div key={b.id} className="relative group p-4 bg-slate-800/40 rounded-xl border border-slate-700/50 hover:bg-slate-700/40 transition-all">
+                    <button 
+                      onClick={() => deleteItem('budget', b.id)} 
+                      className="absolute top-4 right-4 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <div className="flex justify-between items-end mb-3 pr-8">
+                      <span className="font-semibold text-white">{b.category}</span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-xs text-slate-400 mb-0.5">Spent / Limit</span>
+                        <span className="text-sm">
+                          <span className={`font-bold ${isOver ? 'text-red-400' : 'text-slate-200'}`}>₹{spent.toFixed(2)}</span> 
+                          <span className="text-slate-500"> / ₹{b.amount}</span>
+                        </span>
+                      </div>
                     </div>
-                    <div style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div style={{ 
-                        height: '100%', 
-                        width: `${percent}%`, 
-                        background: isOver ? 'var(--danger)' : 'var(--primary)',
-                        transition: 'width 0.5s ease-out'
-                      }}></div>
+                    <div className="h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700/30">
+                      <div className={`h-full rounded-full transition-all duration-700 ease-out ${isOver ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${percent}%` }}></div>
                     </div>
+                    {isOver && <p className="text-xs text-red-400 mt-2 font-medium flex items-center gap-1"><Flag size={12}/> Budget exceeded</p>}
                   </div>
                 )
               })
             }
           </div>
         </div>
-      </div>
 
-      {/* SAVINGS GOALS */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-        <div className="glass-panel">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-            <Flag size={24} color="var(--success)" /> Savings Goals
+        {/* SAVINGS GOALS */}
+        <div className="glass-panel p-6 flex flex-col gap-6">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Flag size={24} className="text-emerald-400" /> Savings Goals
           </h2>
           
-          <form onSubmit={addGoal} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-            <input type="text" className="form-control" placeholder="Goal (e.g. New Car)" value={gName} onChange={e => setGName(e.target.value)} style={{ flex: 2 }} required />
-            <input type="number" className="form-control" placeholder="Target" value={gTarget} onChange={e => setGTarget(e.target.value)} style={{ flex: 1 }} required />
-            <button type="submit" className="btn" style={{ width: 'auto', padding: '0 1rem' }}><Plus size={20} /></button>
+          <form onSubmit={addGoal} className="flex gap-3 items-start bg-slate-900/30 p-4 rounded-xl border border-slate-700/30">
+            <input 
+              type="text" 
+              className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-sm placeholder:text-slate-500 flex-[2]" 
+              placeholder="Goal (e.g. Vacation)" 
+              value={gName} 
+              onChange={e => setGName(e.target.value)} 
+              required 
+            />
+            <input 
+              type="number" 
+              className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-sm placeholder:text-slate-500 flex-[1]" 
+              placeholder="Target ₹" 
+              value={gTarget} 
+              onChange={e => setGTarget(e.target.value)} 
+              required 
+            />
+            <button type="submit" className="p-2.5 bg-emerald-500 hover:bg-emerald-400 text-white rounded-lg shadow-lg shadow-emerald-500/20 transition-all transform hover:-translate-y-0.5" title="Add Goal">
+              <Plus size={20} />
+            </button>
           </form>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {goals.length === 0 ? <p style={{ color: 'var(--text-muted)' }}>No goals set.</p> : 
+          <div className="flex flex-col gap-5 mt-2">
+            {goals.length === 0 ? (
+              <div className="py-8 text-center border-2 border-dashed border-slate-700/50 rounded-xl">
+                <p className="text-slate-500">No savings goals set.</p>
+              </div>
+            ) : 
               goals.map(g => {
                 const percent = Math.min((g.current_amount / g.target_amount) * 100, 100);
                 return (
-                  <div key={g.id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                      <span style={{ fontWeight: 600 }}>{g.name}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                        ${g.current_amount} / ${g.target_amount}
-                        <Trash2 size={14} style={{ marginLeft: '1rem', cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => deleteItem('goal', g.id)} />
-                      </span>
+                  <div key={g.id} className="relative group p-4 bg-slate-800/40 rounded-xl border border-slate-700/50 hover:bg-slate-700/40 transition-all">
+                    <button 
+                      onClick={() => deleteItem('goal', g.id)} 
+                      className="absolute top-4 right-4 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <div className="flex justify-between items-end mb-3 pr-8">
+                      <span className="font-semibold text-white">{g.name}</span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-xs text-slate-400 mb-0.5">Saved / Target</span>
+                        <span className="text-sm">
+                          <span className="font-bold text-emerald-400">₹{g.current_amount}</span> 
+                          <span className="text-slate-500"> / ₹{g.target_amount}</span>
+                        </span>
+                      </div>
                     </div>
-                    <div style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div style={{ 
-                        height: '100%', 
-                        width: `${percent}%`, 
-                        background: 'var(--success)',
-                        transition: 'width 0.5s ease-out'
-                      }}></div>
+                    <div className="h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700/30">
+                      <div className="h-full bg-emerald-500 rounded-full transition-all duration-700 ease-out" style={{ width: `${percent}%` }}></div>
                     </div>
                   </div>
                 )

@@ -6,6 +6,7 @@ import Budgets from './components/Budgets';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Navigation from './components/Navigation';
+import AnimatedBackground from './components/AnimatedBackground';
 import { AuthContext } from './context/AuthContext';
 
 function App() {
@@ -72,48 +73,62 @@ function App() {
   };
 
   if (authLoading) {
-    return <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--text-muted)' }}>Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <AnimatedBackground />
+        <div className="text-slate-400 animate-pulse text-lg">Loading...</div>
+      </div>
+    );
   }
 
   if (!user) {
     return (
-      <div className="app-container" style={{ maxWidth: '400px', marginTop: '5rem' }}>
-        <header>
-          <h1>FinMan</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Premium Expense Tracking</p>
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
+        <AnimatedBackground />
+        <header className="mb-8 text-center">
+          <h1 className="text-5xl md:text-6xl font-extrabold text-white mb-2 tracking-tight">
+            FinMan
+          </h1>
+          <p className="text-emerald-400 font-medium tracking-wide">Premium Expense Tracking</p>
         </header>
-        {showLogin ? (
-          <Login onSwitch={() => setShowLogin(false)} />
-        ) : (
-          <Signup onSwitch={() => setShowLogin(true)} />
-        )}
+        
+        <div className="w-full max-w-md w-full">
+          {showLogin ? (
+            <Login onSwitch={() => setShowLogin(false)} />
+          ) : (
+            <Signup onSwitch={() => setShowLogin(true)} />
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="app-container" style={{ maxWidth: '1400px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '2rem' }}>
+    <div className="min-h-screen flex flex-col">
+      <AnimatedBackground />
+      <div className="flex-1 w-full max-w-7xl mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6 lg:p-8">
         <Navigation />
         
-        <main style={{ paddingBottom: '2rem' }}>
+        <main className="flex-1 w-full min-w-0 pb-20 md:pb-8">
           {loading ? (
-             <div style={{ textAlign: 'center', marginTop: '3rem' }}>
-               <h2 style={{ color: 'var(--text-muted)' }}>Loading your data...</h2>
+             <div className="flex items-center justify-center h-64">
+               <h2 className="text-slate-400 animate-pulse text-lg">Loading your data...</h2>
              </div>
           ) : (
-            <Routes>
-              <Route path="/" element={
-                 <Dashboard 
-                   transactions={transactions} 
-                   onAddTransaction={handleAddTransaction}
-                   onDeleteTransaction={handleDeleteTransaction}
-                 />
-              } />
-              <Route path="/analytics" element={<Analytics transactions={transactions} />} />
-              <Route path="/budgets" element={<Budgets />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            <div className="animate-fade-in">
+              <Routes>
+                <Route path="/" element={
+                   <Dashboard 
+                     transactions={transactions} 
+                     onAddTransaction={handleAddTransaction}
+                     onDeleteTransaction={handleDeleteTransaction}
+                   />
+                } />
+                <Route path="/analytics" element={<Analytics transactions={transactions} />} />
+                <Route path="/budgets" element={<Budgets />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </div>
           )}
         </main>
       </div>

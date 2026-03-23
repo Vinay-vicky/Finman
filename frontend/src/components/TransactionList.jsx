@@ -56,30 +56,31 @@ const TransactionList = ({ transactions, onDelete }) => {
   }, [paginatedTransactions, isDateSort]);
 
   const renderTransaction = (tx) => (
-    <div key={tx.id} className="transaction-item" style={{ padding: '0.75rem 1rem', marginBottom: isDateSort ? '0' : '0.5rem' }}>
-      <div className="transaction-info">
-        <span className="transaction-title">{tx.title}</span>
-        <span className="transaction-category">{tx.category} {!isDateSort && ` • ${new Date(tx.date).toLocaleDateString()}`}</span>
+    <div key={tx.id} className="group flex items-center justify-between p-4 bg-slate-800/40 border border-slate-700/50 rounded-xl hover:bg-slate-700/50 hover:border-slate-600 transition-all mb-2 last:mb-0">
+      <div className="flex flex-col">
+        <span className="font-semibold text-white text-lg">{tx.title}</span>
+        <span className="text-sm text-slate-400 mt-0.5">
+          {tx.category} {!isDateSort && ` • ${new Date(tx.date).toLocaleDateString()}`}
+        </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <span className={`transaction-amount ${tx.type === 'income' ? 'amount-income' : 'amount-expense'}`} style={{ fontSize: '1rem' }}>
-          {tx.type === 'income' ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+      <div className="flex items-center gap-4">
+        <span className={`font-bold flex items-center gap-1.5 text-lg ${tx.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+          {tx.type === 'income' ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
           {formatCurrency(tx.amount)}
         </span>
         <button 
-          className="delete-btn" 
+          className="p-2.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100" 
           onClick={() => setDeleteId(tx.id)} 
           title="Delete transaction" 
-          style={{ padding: '0.25rem' }}
         >
-          <Trash2 size={16} />
+          <Trash2 size={18} />
         </button>
       </div>
     </div>
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="flex flex-col h-full">
       <ConfirmModal 
         isOpen={!!deleteId}
         title="Delete Transaction"
@@ -91,27 +92,25 @@ const TransactionList = ({ transactions, onDelete }) => {
         }}
       />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>History</h3>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <h3 className="text-xl font-bold text-white">Recent Transactions</h3>
         
-        <div style={{ display: 'flex', gap: '1rem', flex: 1, justifyContent: 'flex-end', minWidth: '300px' }}>
-          <div style={{ position: 'relative', flex: 1, maxWidth: '250px' }}>
-            <Search size={18} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input 
               type="text" 
-              className="form-control" 
-              placeholder="Search transactions..." 
+              className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-sm" 
+              placeholder="Search..." 
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-              style={{ paddingLeft: '2.5rem', width: '100%' }}
             />
           </div>
           
           <select 
-            className="form-control" 
+            className="w-full sm:w-auto bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-sm appearance-none cursor-pointer" 
             value={sortBy} 
             onChange={(e) => { setSortBy(e.target.value); setCurrentPage(1); }}
-            style={{ width: 'auto', WebkitAppearance: 'none', appearance: 'none' }}
           >
             <option value="date_desc">Newest First</option>
             <option value="date_asc">Oldest First</option>
@@ -121,53 +120,50 @@ const TransactionList = ({ transactions, onDelete }) => {
         </div>
       </div>
 
-      <div className="transaction-list" style={{ flex: 1 }}>
+      <div className="flex-1 min-h-[400px]">
         {paginatedTransactions.length === 0 ? (
-          <div className="glass-panel" style={{ padding: '3rem 2rem', textAlign: 'center', background: 'rgba(30, 41, 59, 0.2)' }}>
-            <p style={{ color: 'var(--text-muted)' }}>No transactions found.</p>
+          <div className="h-full flex flex-col items-center justify-center p-10 mt-8 border border-slate-800 rounded-2xl bg-slate-900/20 border-dashed">
+            <p className="text-slate-400 text-lg mb-2">No transactions found</p>
+            <p className="text-slate-500 text-sm">Try adjusting your search or filters.</p>
           </div>
         ) : (
           isDateSort ? (
             Object.keys(groupedTransactions).map((dateStr) => (
-              <div key={dateStr} style={{ marginBottom: '1rem' }}>
-                <h4 style={{ 
-                  marginBottom: '0.75rem', fontSize: '0.85rem', color: 'var(--text-muted)', 
-                  textTransform: 'uppercase', letterSpacing: '0.05em',
-                  borderBottom: '1px solid var(--border-color)', paddingBottom: '0.25rem'
-                }}>
+              <div key={dateStr} className="mb-6 last:mb-0">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-700/50 pb-2">
                   {dateStr}
                 </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className="flex flex-col">
                   {groupedTransactions[dateStr].map(renderTransaction)}
                 </div>
               </div>
             ))
           ) : (
-            paginatedTransactions.map(renderTransaction)
+            <div className="flex flex-col">
+              {paginatedTransactions.map(renderTransaction)}
+            </div>
           )
         )}
       </div>
 
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '2rem', gap: '1rem' }}>
+        <div className="flex justify-center items-center mt-8 gap-4 pb-2">
           <button 
-            className="btn" 
-            style={{ width: 'auto', padding: '0.5rem', background: 'var(--panel-bg)' }}
+            className="p-2 rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
           >
-            <ChevronLeft size={20} color="var(--text-main)" />
+            <ChevronLeft size={20} />
           </button>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+          <span className="text-slate-300 font-medium text-sm bg-slate-800/50 px-4 py-1.5 rounded-full">
             Page {currentPage} of {totalPages}
           </span>
           <button 
-            className="btn" 
-            style={{ width: 'auto', padding: '0.5rem', background: 'var(--panel-bg)' }}
+            className="p-2 rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
           >
-            <ChevronRight size={20} color="var(--text-main)" />
+            <ChevronRight size={20} />
           </button>
         </div>
       )}
