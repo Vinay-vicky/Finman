@@ -1,5 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
+import { GoogleLogin } from '@react-oauth/google';
 
 const Signup = ({ onSwitch }) => {
   const { login } = useContext(AuthContext);
@@ -19,6 +20,25 @@ const Signup = ({ onSwitch }) => {
       
       if (!res.ok) {
         throw new Error(data.error || 'Registration failed');
+      }
+      
+      login(data.user, data.token);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: credentialResponse.credential })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Google Registration failed');
       }
       
       login(data.user, data.token);
@@ -70,7 +90,23 @@ const Signup = ({ onSwitch }) => {
         </button>
       </form>
       
-      <div className="mt-8 text-center text-sm text-slate-400">
+      <div className="flex items-center my-6">
+        <div className="flex-1 border-t border-slate-700/50"></div>
+        <span className="px-4 text-sm text-slate-500">Or continue with</span>
+        <div className="flex-1 border-t border-slate-700/50"></div>
+      </div>
+
+      <div className="flex justify-center mb-6">
+        <GoogleLogin
+          onSuccess={handleGoogleSuccess}
+          onError={() => setError('Google Registration Failed')}
+          theme="filled_black"
+          shape="rectangular"
+          text="signup_with"
+        />
+      </div>
+      
+      <div className="mt-6 text-center text-sm text-slate-400">
         Already have an account?{' '}
         <button 
           onClick={onSwitch} 

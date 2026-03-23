@@ -35,7 +35,30 @@ const loginUser = async (username, password) => {
   return user;
 };
 
+const oauthLogin = async (email, name) => {
+  const userResult = await db.execute({ sql: 'SELECT * FROM users WHERE username = ?', args: [email] });
+  if (userResult.rows.length > 0) {
+    return userResult.rows[0];
+  }
+  
+  // Register new Google user with a massive random unguessable password
+  const crypto = require('crypto');
+  const randomPass = crypto.randomBytes(32).toString('hex');
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(randomPass, salt);
+
+  const result = await db.execute({
+    sql: 'INSERT INTO users (username, password) VALUES (?, ?)',
+    args: [email, hashedPassword]
+  });
+  
+  const insertId = Number(result.lastInsertRowid);
+  const newUser = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [insertId] });
+  return newUser.rows[0];
+};
+
 module.exports = {
   registerUser,
   loginUser,
+  oauthLogin,
 };

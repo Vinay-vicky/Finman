@@ -1,6 +1,10 @@
 const authService = require('../services/authService');
 const jwt = require('jsonwebtoken');
 const { SECRET_KEY } = require('../middleware/authMiddleware');
+const { OAuth2Client } = require('google-auth-library');
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 
 const register = async (req, res) => {
   const { username, password } = req.body;
@@ -42,7 +46,33 @@ const login = async (req, res) => {
   }
 };
 
+const googleLogin = async (req, res) => {
+  const { credential } = req.body;
+  if (!credential) {
+    return res.status(400).json({ error: 'Google credential is required.' });
+  }
+
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID, 
+    });
+    const payload = ticket.getPayload();
+    const { email, name } = payload;
+
+    const user = await authService.oauthLogin(email, name);
+    const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '7d' });
+    
+    res.json({ token, user: { id: user.id, username: user.username } });
+  } catch (err) {
+    console.error('Google Auth Error:', err);
+    res.status(401).json({ error: 'Invalid Google token.' });
+  }
+};
+
 module.exports = {
   register,
   login,
+  googleLogin,
 };
+
