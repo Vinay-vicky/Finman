@@ -1,0 +1,30 @@
+
+> expense-tracker-frontend@1.0.0 build
+> npx vite build
+
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+Error: Cannot apply unknown utility class `bg-slate-800/60`. Are you using CSS modules or similar and missing `@reference`? https://tailwindcss.com/docs/functions-and-directives#reference-directive
+    at onInvalidCandidate (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:21:1314)
+    at Ee (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:16:37066)
+    at C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:21:355
+    at _r (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:3:1733)
+    at I (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:3:1377)
+    at Te (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:21:172)
+    at mn (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:38:294)
+    at async gn (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\tailwindcss\dist\lib.js:38:631)
+    at async Xr (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\@tailwindcss\node\dist\index.js:10:3416)
+    at async N (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\@tailwindcss\postcss\dist\index.js:10:3979)
+[32m✓[39m 3 modules transformed.
+[31mx[39m Build failed in 306ms
+[31merror during build:
+[31m[vite:css] [postcss] tailwindcss: C:/Users/Admin/Desktop/FinMan/frontend/src/index.css:1:1: Cannot apply unknown utility class `bg-slate-800/60`. Are you using CSS modules or similar and missing `@reference`? https://tailwindcss.com/docs/functions-and-directives#reference-directive[31m
+file: [36mC:/Users/Admin/Desktop/FinMan/frontend/src/index.css:1:0[31m
+    at Input.error (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\postcss\lib\input.js:135:16)
+    at Root.error (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\postcss\lib\node.js:146:32)
+    at Object.Once (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\@tailwindcss\postcss\dist\index.js:10:6913)
+    at async LazyResult.runAsync (C:\Users\Admin\Desktop\FinMan\frontend\node_modules\postcss\lib\lazy-result.js:293:11)
+    at async compileCSS (file:///C:/Users/Admin/Desktop/FinMan/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:36898:21)
+    at async Object.transform (file:///C:/Users/Admin/Desktop/FinMan/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:36171:11)
+    at async transform (file:///C:/Users/Admin/Desktop/FinMan/frontend/node_modules/rollup/dist/es/shared/node-entry.js:21269:16)
+    at async ModuleLoader.addModuleSource (file:///C:/Users/Admin/Desktop/FinMan/frontend/node_modules/rollup/dist/es/shared/node-entry.js:21497:36)[39m
