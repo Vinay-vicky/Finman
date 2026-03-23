@@ -1,0 +1,86 @@
+const { db } = require('../database');
+
+const getTransactions = async (userId, filters) => {
+  const { search, category, type, sort = 'date', order = 'desc', limit = 50, offset = 0, paginate } = filters;
+
+  let query = 'SELECT * FROM transactions WHERE user_id = ?';
+  const args = [userId];
+
+  if (search) {
+    query += ' AND title LIKE ?';
+    args.push(`%${search}%`);
+  }
+  if (category) {
+    query += ' AND category = ?';
+    args.push(category);
+  }
+  if (type) {
+    query += ' AND type = ?';
+    args.push(type);
+  }
+
+  const allowedSorts = ['date', 'amount', 'title'];
+  const safeSort = allowedSorts.includes(sort) ? sort : 'date';
+  const safeOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+  query += ` ORDER BY ${safeSort} ${safeOrder} LIMIT ? OFFSET ?`;
+  args.push(Number(limit), Number(offset));
+
+  if (paginate === 'true') {
+    let countQuery = 'SELECT COUNT(*) as total FROM transactions WHERE user_id = ?';
+    const countArgs = [userId];
+    if (search) { countQuery += ' AND title LIKE ?'; countArgs.push(`%${search}%`); }
+    if (category) { countQuery += ' AND category = ?'; countArgs.push(category); }
+    if (type) { countQuery += ' AND type = ?'; countArgs.push(type); }
+
+    const countResult = await db.execute({ sql: countQuery, args: countArgs });
+    const total = Number(countResult.rows[0].total);
+
+    const result = await db.execute({ sql: query, args });
+    
+    return {
+      data: result.rows,
+      total,
+      page: Math.floor(Number(offset) / Number(limit)) + 1,
+      totalPages: Math.ceil(total / Number(limit)),
+    };
+  } else {
+    const result = await db.execute({ sql: query, args });
+    return result.rows;
+  }
+};
+
+const getAllTransactionsForExport = async (userId) => {
+  const result = await db.execute({
+    sql: 'SELECT title, amount, type, category, date FROM transactions WHERE user_id = ? ORDER BY date DESC',
+    args: [userId]
+  });
+  return result.rows;
+};
+
+const createTransaction = async (userId, data) => {
+  const result = await db.execute({
+    sql: 'INSERT INTO transactions (user_id, title, amount, type, category, date) VALUES (?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))',
+    args: [userId, data.title, data.amount, data.type, data.category, data.date || null]
+  });
+  const newTx = await db.execute({ sql: 'SELECT * FROM transactions WHERE id = ?', args: [Number(result.lastInsertRowid)] });
+  return newTx.rows[0];
+};
+
+const deleteTransaction = async (userId, transactionId) => {
+  const result = await db.execute({
+    sql: 'DELETE FROM transactions WHERE id = ? AND user_id = ?',
+    args: [transactionId, userId]
+  });
+  if (result.rowsAffected === 0) {
+    throw new Error('Transaction not found or unauthorized.');
+  }
+  return result;
+};
+
+module.exports = {
+  getTransactions,
+  getAllTransactionsForExport,
+  createTransaction,
+  deleteTransaction,
+};
