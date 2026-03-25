@@ -18,7 +18,7 @@ const getSummary = async (userId) => {
 
 const getCategoryCharts = async (userId) => {
   const result = await db.execute({
-    sql: 'SELECT category as name, SUM(amount) as value, type FROM transactions WHERE user_id = ? AND type = "expense" GROUP BY category',
+    sql: "SELECT category as name, SUM(amount) as value, type FROM transactions WHERE user_id = ? AND type = 'expense' GROUP BY category",
     args: [userId]
   });
   

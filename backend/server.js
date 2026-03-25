@@ -35,7 +35,11 @@ const { connectDB } = require('./database');
 connectDB();
 
 // Apply security headers
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  })
+);
 app.disable('x-powered-by');
 
 // Rate limiting

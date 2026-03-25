@@ -13,8 +13,20 @@ export const AuthProvider = ({ children }) => {
 
     const hydrateSession = async () => {
       const storedUser = localStorage.getItem('user');
+      const storedToken = localStorage.getItem('token');
+
       if (storedUser && isMounted) {
         setUser(JSON.parse(storedUser));
+      }
+
+      // If there is no local session hint, skip refresh to avoid noisy expected 401s.
+      if (!storedUser && !storedToken) {
+        if (isMounted) {
+          setToken(null);
+          setUser(null);
+          setLoading(false);
+        }
+        return;
       }
 
       try {
