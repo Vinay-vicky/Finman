@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, PieChart, Target, FileText, Calculator, Shield, Moon, Sun, LogOut } from 'lucide-react';
+import { LayoutDashboard, PieChart, Target, FileText, Calculator, Shield, Rocket, Moon, Sun, LogOut } from 'lucide-react';
 import { ThemeContext } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
 
@@ -50,6 +50,9 @@ const Navigation = ({ onPrefetchRoute }) => {
           <NavLink to="/settings" className={getNavLinkClass} onMouseEnter={() => prefetch('settings')} onFocus={() => prefetch('settings')}>
             <Shield size={20} /> Settings
           </NavLink>
+          <NavLink to="/next-level" className={getNavLinkClass} onMouseEnter={() => prefetch('nextLevel')} onFocus={() => prefetch('nextLevel')}>
+            <Rocket size={20} /> Next Level
+          </NavLink>
         </div>
 
         <div className="mt-auto pt-6 border-t border-slate-700/50 flex flex-col gap-2">
@@ -82,6 +85,9 @@ const Navigation = ({ onPrefetchRoute }) => {
         </NavLink>
         <NavLink to="/settings" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <Shield size={22} className="mb-1" />
+        </NavLink>
+        <NavLink to="/next-level" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+          <Rocket size={22} className="mb-1" />
         </NavLink>
         <button onClick={logout} className="p-3 rounded-xl text-slate-400 hover:text-red-400 transition-all">
           <LogOut size={22} className="mb-1" />

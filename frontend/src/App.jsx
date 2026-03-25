@@ -11,6 +11,7 @@ const Budgets = lazy(() => import('./components/Budgets'));
 const Reports = lazy(() => import('./components/Reports'));
 const Calculators = lazy(() => import('./components/Calculators'));
 const Settings = lazy(() => import('./components/Settings'));
+const NextLevel = lazy(() => import('./components/NextLevel'));
 const Login = lazy(() => import('./components/Login'));
 const Signup = lazy(() => import('./components/Signup'));
 
@@ -21,6 +22,7 @@ const prefetchMap = {
   reports: () => import('./components/Reports'),
   calculators: () => import('./components/Calculators'),
   settings: () => import('./components/Settings'),
+  nextLevel: () => import('./components/NextLevel'),
 };
 
 function App() {
@@ -63,6 +65,7 @@ function App() {
       prefetchRoute('reports');
       prefetchRoute('calculators');
       prefetchRoute('settings');
+      prefetchRoute('nextLevel');
     };
 
     if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
@@ -181,6 +184,7 @@ function App() {
                   <Route path="/reports" element={<Reports />} />
                   <Route path="/calculators" element={<Calculators />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/next-level" element={<NextLevel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </div>

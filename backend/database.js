@@ -86,6 +86,80 @@ const connectDB = async () => {
         expires_at DATETIME NOT NULL,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
+      `CREATE TABLE IF NOT EXISTS net_worth_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('asset', 'liability')),
+        value REAL NOT NULL,
+        category TEXT,
+        as_of DATETIME DEFAULT CURRENT_TIMESTAMP,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS automation_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        field TEXT NOT NULL CHECK(field IN ('title', 'category', 'amount', 'type')),
+        operator TEXT NOT NULL CHECK(operator IN ('contains', 'equals', 'gt', 'lt')),
+        value TEXT NOT NULL,
+        action_type TEXT NOT NULL CHECK(action_type IN ('set_category', 'set_type', 'set_title')),
+        action_value TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS bill_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        amount REAL NOT NULL,
+        due_day INTEGER NOT NULL,
+        category TEXT,
+        active INTEGER DEFAULT 1,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS households (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        invite_code TEXT UNIQUE NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (owner_user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS household_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('owner', 'editor', 'viewer')),
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(household_id, user_id),
+        FOREIGN KEY (household_id) REFERENCES households(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS scenarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        monthly_savings_boost REAL DEFAULT 0,
+        expense_cut_pct REAL DEFAULT 0,
+        months INTEGER DEFAULT 12,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS activity_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        area TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id INTEGER,
+        payload_json TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
     ], 'write');
 
     // Lightweight migrations for existing local/hosted DBs.
@@ -110,6 +184,14 @@ const connectDB = async () => {
       `CREATE INDEX IF NOT EXISTS idx_recurring_user_paused_nextdate ON recurring_transactions(user_id, paused, next_date)`,
       `CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_revoked_expires ON refresh_tokens(user_id, revoked_at, expires_at)`,
       `CREATE INDEX IF NOT EXISTS idx_job_locks_expires_at ON job_locks(expires_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_net_worth_user_kind_asof ON net_worth_items(user_id, kind, as_of DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_automation_rules_user_enabled ON automation_rules(user_id, enabled)`,
+      `CREATE INDEX IF NOT EXISTS idx_bill_items_user_active_due ON bill_items(user_id, active, due_day)`,
+      `CREATE INDEX IF NOT EXISTS idx_households_owner ON households(owner_user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_household_members_household_user ON household_members(household_id, user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_scenarios_user_created ON scenarios(user_id, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_created ON activity_logs(user_id, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_area_action ON activity_logs(user_id, area, action, createdAt DESC)`,
     ];
 
     for (const sql of migrationStatements) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Calculator,
@@ -193,6 +193,10 @@ const Calculators = () => {
   const [active, setActive] = useState('tvm');
   const [recentCalcIds, setRecentCalcIds] = useState(() => getLocalArray('finman.calcRecent'));
   const [favoriteCalcIds, setFavoriteCalcIds] = useState(() => getLocalArray('finman.calcFavorites'));
+  const [dragFavoriteId, setDragFavoriteId] = useState(null);
+  const [mobileReorderMode, setMobileReorderMode] = useState(false);
+  const [mobilePickFavoriteId, setMobilePickFavoriteId] = useState(null);
+  const longPressTimerRef = useRef(null);
 
   const [tvmPv, setTvmPv] = useState('200000');
   const [tvmPmt, setTvmPmt] = useState('1500');
@@ -308,15 +312,80 @@ const Calculators = () => {
     ));
   };
 
+  const reorderFavorites = (fromId, toId) => {
+    if (!fromId || !toId || fromId === toId) return;
+
+    setFavoriteCalcIds((prev) => {
+      const fromIndex = prev.indexOf(fromId);
+      const toIndex = prev.indexOf(toId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleFavoriteTouchStart = (id) => {
+    clearLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      setMobileReorderMode(true);
+      setMobilePickFavoriteId(id);
+      if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+        window.navigator.vibrate(15);
+      }
+    }, 450);
+  };
+
+  const handleFavoriteTouchEnd = () => {
+    clearLongPressTimer();
+  };
+
+  const handlePinnedFavoriteClick = (id) => {
+    if (!mobileReorderMode) {
+      setActive(id);
+      return;
+    }
+
+    if (!mobilePickFavoriteId) {
+      setMobilePickFavoriteId(id);
+      return;
+    }
+
+    reorderFavorites(mobilePickFavoriteId, id);
+    setMobilePickFavoriteId(id);
+  };
+
+  useEffect(() => {
+    return () => clearLongPressTimer();
+  }, []);
+
   const recentCalculators = recentCalcIds
     .map((id) => calcTypes.find((c) => c.id === id))
     .filter(Boolean);
 
   const displayedCalculators = useMemo(() => {
-    const favorites = filtered.filter((c) => favoriteCalcIds.includes(c.id));
+    const favorites = favoriteCalcIds
+      .map((id) => filtered.find((c) => c.id === id))
+      .filter(Boolean);
     const others = filtered.filter((c) => !favoriteCalcIds.includes(c.id));
     return [...favorites, ...others];
   }, [filtered, favoriteCalcIds]);
+
+  const pinnedFavoriteCalculators = useMemo(
+    () => favoriteCalcIds
+      .map((id) => calcTypes.find((c) => c.id === id))
+      .filter(Boolean),
+    [favoriteCalcIds]
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(location.search || '');
@@ -1098,6 +1167,48 @@ const Calculators = () => {
                   {c.label}
                 </button>
               ))}
+            </div>
+          )}
+
+          {pinnedFavoriteCalculators.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-amber-300 flex items-center gap-1"><Star size={12} /> Pinned Order (drag / long-press)</span>
+              {mobileReorderMode && (
+                <button
+                  onClick={() => {
+                    setMobileReorderMode(false);
+                    setMobilePickFavoriteId(null);
+                  }}
+                  className="px-2.5 py-1.5 rounded-full text-xs border border-cyan-500/50 bg-cyan-500/10 text-cyan-300"
+                >
+                  Done
+                </button>
+              )}
+              {pinnedFavoriteCalculators.map((c) => (
+                <button
+                  key={`pin-${c.id}`}
+                  draggable
+                  onDragStart={() => setDragFavoriteId(c.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    reorderFavorites(dragFavoriteId, c.id);
+                    setDragFavoriteId(null);
+                  }}
+                  onDragEnd={() => setDragFavoriteId(null)}
+                  onTouchStart={() => handleFavoriteTouchStart(c.id)}
+                  onTouchEnd={handleFavoriteTouchEnd}
+                  onTouchCancel={handleFavoriteTouchEnd}
+                  onClick={() => handlePinnedFavoriteClick(c.id)}
+                  className={`px-2.5 py-1.5 rounded-full text-xs border transition-colors ${dragFavoriteId === c.id || mobilePickFavoriteId === c.id ? 'border-amber-300 bg-amber-400/20 text-amber-200' : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'}`}
+                  title="Drag (desktop) or long-press then tap target (mobile)"
+                >
+                  <span className="mr-1 opacity-70">⠿</span>
+                  {c.label}
+                </button>
+              ))}
+              {mobileReorderMode && (
+                <span className="text-[11px] text-cyan-300">Selected: {pinnedFavoriteCalculators.find((x) => x.id === mobilePickFavoriteId)?.label || '-'}</span>
+              )}
             </div>
           )}
         </div>

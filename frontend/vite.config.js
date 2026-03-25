@@ -19,6 +19,7 @@ export default defineConfig({
           if (id.includes('/src/components/Reports')) return 'route-reports';
           if (id.includes('/src/components/Calculators')) return 'route-calculators';
           if (id.includes('/src/components/Settings')) return 'route-settings';
+          if (id.includes('/src/components/NextLevel')) return 'route-next-level';
           if (id.includes('/src/components/Dashboard')) return 'route-dashboard';
 
           if (id.includes('node_modules')) {
