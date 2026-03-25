@@ -18,6 +18,23 @@ const formatDurationMs = (ms) => {
   return `${(value / 1000).toFixed(2)} s`;
 };
 
+const getPerfHealthStatus = (perf) => {
+  if (!perf) return { label: 'Unknown', className: 'text-slate-300 border-slate-500/40 bg-slate-500/10' };
+
+  const hasError = Boolean(perf?.recurringJob?.lastError);
+  const hitRate = Number(perf?.analyticsCache?.hitRate || 0);
+
+  if (hasError) {
+    return { label: 'Critical', className: 'text-red-300 border-red-500/40 bg-red-500/10' };
+  }
+
+  if (hitRate < 0.2) {
+    return { label: 'Warning', className: 'text-amber-300 border-amber-500/40 bg-amber-500/10' };
+  }
+
+  return { label: 'Healthy', className: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10' };
+};
+
 const Settings = () => {
   const { token, logout } = useContext(AuthContext);
   const [sessions, setSessions] = useState([]);
@@ -27,6 +44,7 @@ const Settings = () => {
   const [perfLoading, setPerfLoading] = useState(true);
   const [perfError, setPerfError] = useState(null);
   const [lastPerfRefreshAt, setLastPerfRefreshAt] = useState(null);
+  const perfStatus = getPerfHealthStatus(perf);
 
   const loadSessions = async () => {
     if (!token) {
@@ -114,12 +132,19 @@ const Settings = () => {
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <Activity size={18} className="text-emerald-400" /> Performance Monitor
           </h3>
-          <button
-            onClick={() => loadPerf()}
-            className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center gap-2"
-          >
-            <RefreshCw size={14} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {!perfLoading && !perfError && (
+              <span className={`text-xs px-2 py-1 rounded-full border ${perfStatus.className}`}>
+                {perfStatus.label}
+              </span>
+            )}
+            <button
+              onClick={() => loadPerf()}
+              className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center gap-2"
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
         </div>
 
         {perfLoading ? (

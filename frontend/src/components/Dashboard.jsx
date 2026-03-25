@@ -1,15 +1,81 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import TransactionForm from './TransactionForm';
 import TransactionList from './TransactionList';
 import CalendarPicker from './CalendarPicker';
 import RecurringManager from './RecurringManager';
-import { Calendar, PlusCircle } from 'lucide-react';
+import { Calendar, PlusCircle, Star, Clock3, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
+const calcMeta = {
+  tvm: 'TVM Calculator',
+  currency: 'Currency Converter',
+  loan: 'Loan Calculator',
+  compound: 'Compound Interest',
+  ccPayoff: 'Credit Card Payoff',
+  retirement: 'Retirement / 401K',
+  tip: 'Tip Calculator',
+  basic: 'Calculator',
+  apr: 'APR Calculator',
+  roi: 'ROI Calculator',
+  autoLoan: 'Auto Loan Calculator',
+  ccMinimum: 'Credit Card Minimum',
+  discountTax: 'Discount & Tax',
+  irrNpv: 'IRR / NPV Calculator',
+  percentage: 'Percentage Calculator',
+  bond: 'Bond Calculator',
+  stock: 'Stock Calculator',
+  misc: 'Misc Calculation',
+};
+
+const getLocalArray = (key) => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpdateTransaction, onRefreshTransactions }) => {
+  const navigate = useNavigate();
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [filterMode, setFilterMode] = useState('date'); // 'date', 'week', 'month', 'year', 'all'
+  const [favoriteCalcIds, setFavoriteCalcIds] = useState(() => getLocalArray('finman.calcFavorites'));
+  const [recentCalcIds, setRecentCalcIds] = useState(() => getLocalArray('finman.calcRecent'));
+
+  useEffect(() => {
+    const syncCalcShortcuts = () => {
+      setFavoriteCalcIds(getLocalArray('finman.calcFavorites'));
+      setRecentCalcIds(getLocalArray('finman.calcRecent'));
+    };
+
+    syncCalcShortcuts();
+    window.addEventListener('focus', syncCalcShortcuts);
+    window.addEventListener('storage', syncCalcShortcuts);
+
+    return () => {
+      window.removeEventListener('focus', syncCalcShortcuts);
+      window.removeEventListener('storage', syncCalcShortcuts);
+    };
+  }, []);
+
+  const favoriteCalcChips = useMemo(
+    () => favoriteCalcIds.map((id) => ({ id, label: calcMeta[id] || id })).slice(0, 6),
+    [favoriteCalcIds]
+  );
+
+  const recentCalcChips = useMemo(
+    () => recentCalcIds.map((id) => ({ id, label: calcMeta[id] || id })).slice(0, 6),
+    [recentCalcIds]
+  );
+
+  const openCalculator = (id) => {
+    navigate(`/calculators?tool=${encodeURIComponent(id)}`);
+  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
@@ -149,6 +215,64 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
           onClose={() => setShowCalendar(false)}
         />
       )}
+
+      {/* Calculator Shortcuts */}
+      <div className="glass-panel p-5 rounded-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-lg font-semibold text-white">Quick Calculator Shortcuts</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Jump directly to your most-used tools.</p>
+          </div>
+          <button
+            onClick={() => navigate('/calculators')}
+            className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold flex items-center gap-1"
+          >
+            Open Center <ArrowRight size={14} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3">
+            <p className="text-xs text-slate-300 flex items-center gap-1 mb-2"><Star size={12} className="text-amber-300" /> Pinned Favorites</p>
+            {favoriteCalcChips.length === 0 ? (
+              <p className="text-xs text-slate-500">Pin calculators in the Calculators Center to see them here.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {favoriteCalcChips.map((c) => (
+                  <button
+                    key={`fav-${c.id}`}
+                    onClick={() => openCalculator(c.id)}
+                    className="px-2.5 py-1.5 rounded-full text-xs border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                    title={c.label}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3">
+            <p className="text-xs text-slate-300 flex items-center gap-1 mb-2"><Clock3 size={12} className="text-cyan-300" /> Recently Used</p>
+            {recentCalcChips.length === 0 ? (
+              <p className="text-xs text-slate-500">Open calculators to build your recent list.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {recentCalcChips.map((c) => (
+                  <button
+                    key={`recent-${c.id}`}
+                    onClick={() => openCalculator(c.id)}
+                    className="px-2.5 py-1.5 rounded-full text-xs border border-slate-600/60 bg-slate-800/60 text-slate-200 hover:bg-slate-700/70"
+                    title={c.label}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Balance Cards with 3D Effect */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

@@ -102,6 +102,8 @@ const connectDB = async () => {
       `CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_transactions_user_type_date ON transactions(user_id, type, date DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_transactions_user_category_date ON transactions(user_id, category, date DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_transactions_user_type_category_date ON transactions(user_id, type, category, date DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_transactions_user_month_type ON transactions(user_id, strftime('%Y-%m', date), type)`,
       `CREATE INDEX IF NOT EXISTS idx_budgets_user_month_category ON budgets(user_id, month, category)`,
       `CREATE INDEX IF NOT EXISTS idx_goals_user ON goals(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_categories_user_type_name ON categories(user_id, type, name)`,

@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, PieChart, Target, FileText, Shield, Moon, Sun, LogOut } from 'lucide-react';
+import { LayoutDashboard, PieChart, Target, FileText, Calculator, Shield, Moon, Sun, LogOut } from 'lucide-react';
 import { ThemeContext } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
 
@@ -44,6 +44,9 @@ const Navigation = ({ onPrefetchRoute }) => {
           <NavLink to="/reports" className={getNavLinkClass} onMouseEnter={() => prefetch('reports')} onFocus={() => prefetch('reports')}>
             <FileText size={20} /> Reports
           </NavLink>
+          <NavLink to="/calculators" className={getNavLinkClass} onMouseEnter={() => prefetch('calculators')} onFocus={() => prefetch('calculators')}>
+            <Calculator size={20} /> Calculators
+          </NavLink>
           <NavLink to="/settings" className={getNavLinkClass} onMouseEnter={() => prefetch('settings')} onFocus={() => prefetch('settings')}>
             <Shield size={20} /> Settings
           </NavLink>
@@ -73,6 +76,9 @@ const Navigation = ({ onPrefetchRoute }) => {
         </NavLink>
         <NavLink to="/reports" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <FileText size={22} className="mb-1" />
+        </NavLink>
+        <NavLink to="/calculators" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+          <Calculator size={22} className="mb-1" />
         </NavLink>
         <NavLink to="/settings" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <Shield size={22} className="mb-1" />

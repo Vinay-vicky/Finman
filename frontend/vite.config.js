@@ -17,6 +17,7 @@ export default defineConfig({
           if (id.includes('/src/components/Analytics')) return 'route-analytics';
           if (id.includes('/src/components/Budgets')) return 'route-budgets';
           if (id.includes('/src/components/Reports')) return 'route-reports';
+          if (id.includes('/src/components/Calculators')) return 'route-calculators';
           if (id.includes('/src/components/Settings')) return 'route-settings';
           if (id.includes('/src/components/Dashboard')) return 'route-dashboard';
 
