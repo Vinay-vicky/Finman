@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { apiRequest } from '../services/api';
 
 export const AuthContext = createContext(null);
 
@@ -8,14 +9,39 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
+    let isMounted = true;
+
+    const hydrateSession = async () => {
       const storedUser = localStorage.getItem('user');
-      if (storedUser) {
+      if (storedUser && isMounted) {
         setUser(JSON.parse(storedUser));
       }
-    }
-    setLoading(false);
-  }, [token]);
+
+      try {
+        const refreshed = await apiRequest('/api/auth/refresh', { method: 'POST' });
+        if (!isMounted) return;
+
+        localStorage.setItem('token', refreshed.token);
+        localStorage.setItem('user', JSON.stringify(refreshed.user));
+        setToken(refreshed.token);
+        setUser(refreshed.user);
+      } catch {
+        if (!isMounted) return;
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setToken(null);
+        setUser(null);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    hydrateSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const login = (userData, authToken) => {
     localStorage.setItem('token', authToken);
@@ -24,7 +50,13 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await apiRequest('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore API logout errors and clear local session regardless.
+    }
+
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);

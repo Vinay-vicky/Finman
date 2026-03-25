@@ -9,12 +9,16 @@ router.use(authenticateToken);
 
 const budgetSchema = z.object({
   category: z.string().min(1, "Category is required"),
-  amount: z.number().positive("Amount must be positive"),
+  amount: z.coerce.number().positive("Amount must be positive"),
   month: z.string().min(6, "Month format YYYY-MM required")
+});
+
+const budgetIdSchema = z.object({
+  id: z.coerce.number().int().positive('Budget id must be a positive number.'),
 });
 
 router.get('/', budgetController.getBudgets);
 router.post('/', validate(budgetSchema), budgetController.createBudget);
-router.delete('/:id', budgetController.deleteBudget);
+router.delete('/:id', validate(budgetIdSchema, 'params'), budgetController.deleteBudget);
 
 module.exports = router;

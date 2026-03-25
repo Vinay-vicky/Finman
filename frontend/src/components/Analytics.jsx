@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
+import { apiRequest } from '../services/api';
 
 const COLORS = ['#34d399', '#3b82f6', '#f87171', '#fbbf24', '#a78bfa', '#f472b6'];
 
@@ -14,12 +15,12 @@ const Analytics = () => {
     if (!token) return;
     setLoading(true);
     Promise.all([
-      fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/analytics/summary`, { headers: { 'Authorization': `Bearer ${token}` } }),
-      fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/analytics/charts/category`, { headers: { 'Authorization': `Bearer ${token}` } })
+      apiRequest('/api/analytics/summary', { token }),
+      apiRequest('/api/analytics/charts/category', { token })
     ])
-    .then(async ([res1, res2]) => {
-      if (res1.ok) setSummary(await res1.json());
-      if (res2.ok) setCategoryData(await res2.json());
+    .then(([summaryData, categoryChartData]) => {
+      setSummary(summaryData);
+      setCategoryData(categoryChartData);
     }).catch(console.error)
     .finally(() => setLoading(false));
   }, [token]);
@@ -41,7 +42,7 @@ const Analytics = () => {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="glass-panel p-6 shadow-none bg-transparent border-0 !p-0">
+      <div className="glass-panel shadow-none bg-transparent border-0 !p-0">
         <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Analytics & Trends</h2>
         <p className="text-slate-400 text-sm">Visual breakdown of your financial health</p>
       </div>

@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Trash2, ArrowUpRight, ArrowDownRight, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, ArrowUpRight, ArrowDownRight, Search, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 
-const TransactionList = ({ transactions, onDelete }) => {
+const TransactionList = ({ transactions, onDelete, onEdit }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date_desc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -56,18 +56,25 @@ const TransactionList = ({ transactions, onDelete }) => {
   }, [paginatedTransactions, isDateSort]);
 
   const renderTransaction = (tx) => (
-    <div key={tx.id} className="group flex items-center justify-between p-4 bg-slate-800/40 border border-slate-700/50 rounded-xl hover:bg-slate-700/50 hover:border-slate-600 transition-all mb-2 last:mb-0">
-      <div className="flex flex-col">
+    <div key={tx.id} className="group flex items-center justify-between p-4 bg-slate-800/40 border border-slate-700/50 rounded-xl hover:bg-slate-700/50 hover:border-slate-600 transition-all mb-2 last:mb-0 hover:shadow-lg hover:shadow-slate-900/20">
+      <div className="flex flex-col flex-1">
         <span className="font-semibold text-white text-lg">{tx.title}</span>
         <span className="text-sm text-slate-400 mt-0.5">
           {tx.category} {!isDateSort && ` • ${new Date(tx.date).toLocaleDateString()}`}
         </span>
       </div>
-      <div className="flex items-center gap-4">
-        <span className={`font-bold flex items-center gap-1.5 text-lg ${tx.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+      <div className="flex items-center gap-2 md:gap-3">
+        <span className={`font-bold flex items-center gap-1.5 text-lg whitespace-nowrap ${tx.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
           {tx.type === 'income' ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
           {formatCurrency(tx.amount)}
         </span>
+        <button 
+          className="p-2.5 text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100" 
+          onClick={() => onEdit(tx)} 
+          title="Edit transaction" 
+        >
+          <Edit2 size={18} />
+        </button>
         <button 
           className="p-2.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100" 
           onClick={() => setDeleteId(tx.id)} 

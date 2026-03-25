@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Dashboard from './components/Dashboard';
-import Analytics from './components/Analytics';
-import Budgets from './components/Budgets';
-import Login from './components/Login';
-import Signup from './components/Signup';
 import Navigation from './components/Navigation';
 import AnimatedBackground from './components/AnimatedBackground';
 import { AuthContext } from './context/AuthContext';
+import { apiRequest } from './services/api';
+
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const Analytics = lazy(() => import('./components/Analytics'));
+const Budgets = lazy(() => import('./components/Budgets'));
+const Login = lazy(() => import('./components/Login'));
+const Signup = lazy(() => import('./components/Signup'));
 
 function App() {
   const { user, token, loading: authLoading } = useContext(AuthContext);
@@ -19,13 +21,10 @@ function App() {
     if (!token) return;
     try {
       setLoading(true);
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/transactions`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const data = await apiRequest('/api/transactions', {
+        token,
       });
-      if (res.ok) {
-        const data = await res.json();
-        setTransactions(data);
-      }
+      setTransactions(data);
     } catch (err) {
       console.error('Failed to fetch transactions', err);
     } finally {
@@ -40,18 +39,12 @@ function App() {
 
   const handleAddTransaction = async (newTx) => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/transactions`, {
+      const data = await apiRequest('/api/transactions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(newTx),
+        token,
+        body: newTx,
       });
-      if (res.ok) {
-        const data = await res.json();
-        setTransactions([data, ...transactions]);
-      }
+      setTransactions([data, ...transactions]);
     } catch (err) {
       console.error('Failed to add transaction', err);
     }
@@ -60,15 +53,32 @@ function App() {
   const handleDeleteTransaction = async (id) => {
     if (!window.confirm("Are you sure you want to delete this transaction?")) return;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/transactions/${id}`, {
+      await apiRequest(`/api/transactions/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        token,
       });
-      if (res.ok) {
-        setTransactions(transactions.filter((tx) => tx.id !== id));
-      }
+      setTransactions(transactions.filter((tx) => tx.id !== id));
     } catch (err) {
       console.error('Failed to delete transaction', err);
+    }
+  };
+
+  const handleUpdateTransaction = async (updatedTx) => {
+    try {
+      const data = await apiRequest(`/api/transactions/${updatedTx.id}`, {
+        method: 'PUT',
+        token,
+        body: {
+          title: updatedTx.title,
+          amount: updatedTx.amount,
+          type: updatedTx.type,
+          category: updatedTx.category,
+          date: updatedTx.date,
+        }
+      });
+      setTransactions(transactions.map((tx) => tx.id === updatedTx.id ? data : tx));
+    } catch (err) {
+      console.error('Failed to update transaction', err);
     }
   };
 
@@ -92,12 +102,14 @@ function App() {
           <p className="text-emerald-400 font-medium tracking-wide">Premium Expense Tracking</p>
         </header>
         
-        <div className="w-full max-w-md w-full">
-          {showLogin ? (
-            <Login onSwitch={() => setShowLogin(false)} />
-          ) : (
-            <Signup onSwitch={() => setShowLogin(true)} />
-          )}
+        <div className="w-full max-w-md">
+          <Suspense fallback={<div className="text-slate-400 animate-pulse text-center">Loading auth form...</div>}>
+            {showLogin ? (
+              <Login onSwitch={() => setShowLogin(false)} />
+            ) : (
+              <Signup onSwitch={() => setShowLogin(true)} />
+            )}
+          </Suspense>
         </div>
       </div>
     );
@@ -115,20 +127,23 @@ function App() {
                <h2 className="text-slate-400 animate-pulse text-lg">Loading your data...</h2>
              </div>
           ) : (
-            <div className="animate-fade-in">
-              <Routes>
-                <Route path="/" element={
-                   <Dashboard 
-                     transactions={transactions} 
-                     onAddTransaction={handleAddTransaction}
-                     onDeleteTransaction={handleDeleteTransaction}
-                   />
-                } />
-                <Route path="/analytics" element={<Analytics transactions={transactions} />} />
-                <Route path="/budgets" element={<Budgets />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </div>
+            <Suspense fallback={<div className="text-slate-400 animate-pulse text-center py-10">Loading page...</div>}>
+              <div className="animate-fade-in">
+                <Routes>
+                  <Route path="/" element={
+                    <Dashboard 
+                      transactions={transactions} 
+                      onAddTransaction={handleAddTransaction}
+                      onDeleteTransaction={handleDeleteTransaction}
+                      onUpdateTransaction={handleUpdateTransaction}
+                    />
+                  } />
+                  <Route path="/analytics" element={<Analytics transactions={transactions} />} />
+                  <Route path="/budgets" element={<Budgets />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </div>
+            </Suspense>
           )}
         </main>
       </div>

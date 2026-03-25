@@ -34,3 +34,185 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-slate-600;
 }
+
+/* 3D Animations and Enhanced Effects */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) translateZ(0); }
+  50% { transform: translateY(-10px) translateZ(20px); }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(16, 185, 129, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.6); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rotate-in {
+  from {
+    opacity: 0;
+    transform: rotateY(-90deg);
+  }
+  to {
+    opacity: 1;
+    transform: rotateY(0);
+  }
+}
+
+@keyframes bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Animation utility classes */
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out;
+}
+
+.animate-rotation-in {
+  animation: rotate-in 0.4s ease-out;
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out;
+}
+
+/* Perspective effects */
+.perspective {
+  perspective: 1000px;
+}
+
+.transform-gpu {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Smooth transitions for interactive elements */
+button, input, select, textarea {
+  @apply transition-all duration-200 ease-out;
+}
+
+/* Enhanced card effects */
+.card-hover {
+  @apply transform transition-all duration-300 hover:scale-105 hover:shadow-2xl;
+}
+
+/* Gradient backgrounds */
+.gradient-emerald {
+  @apply bg-gradient-to-br from-emerald-500/10 to-emerald-600/5;
+}
+
+.gradient-red {
+  @apply bg-gradient-to-br from-red-500/10 to-red-600/5;
+}
+
+/* Loading animation */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+/* Text effects */
+.text-shimmer {
+  background: linear-gradient(90deg, currentColor, currentColor 45%, rgba(255,255,255,0.3) 50%, currentColor 55%, currentColor);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Modal animations */
+.modal-backdrop {
+  animation: fade-in 0.2s ease-out;
+}
+
+.modal-content {
+  animation: scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Input focus effects */
+input:focus, select:focus, textarea:focus {
+  @apply ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-slate-900;
+}
+
+/* Smooth list animations */
+.list-item {
+  @apply transition-all duration-200;
+}
+
+.list-item:hover {
+  @apply translate-x-1;
+}

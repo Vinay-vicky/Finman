@@ -1,20 +1,20 @@
 const analyticsService = require('../services/analyticsService');
 
-const getSummary = async (req, res) => {
+const getSummary = async (req, res, next) => {
   try {
     const summary = await analyticsService.getSummary(req.user.id);
     res.json(summary);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 
-const getCategoryCharts = async (req, res) => {
+const getCategoryCharts = async (req, res, next) => {
   try {
     const charts = await analyticsService.getCategoryCharts(req.user.id);
     res.json(charts);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 

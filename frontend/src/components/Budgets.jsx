@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { Target, Flag, Trash2, Plus } from 'lucide-react';
+import { apiRequest } from '../services/api';
 
 const Budgets = () => {
   const { token } = useContext(AuthContext);
@@ -19,21 +20,18 @@ const Budgets = () => {
   const fetchData = async () => {
     if (!token) return;
     try {
-      const [bRes, gRes, cRes] = await Promise.all([
-        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/budgets`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/goals`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/analytics/charts/category`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const [budgetsData, goalsData, catData] = await Promise.all([
+        apiRequest('/api/budgets', { token }),
+        apiRequest('/api/goals', { token }),
+        apiRequest('/api/analytics/charts/category', { token }),
       ]);
-      
-      if (bRes.ok) setBudgets(await bRes.json());
-      if (gRes.ok) setGoals(await gRes.json());
-      
-      if (cRes.ok) {
-        const catData = await cRes.json();
-        const catMap = {};
-        catData.forEach(c => catMap[c.name] = c.value);
-        setExpensesByCategory(catMap);
-      }
+
+      setBudgets(budgetsData);
+      setGoals(goalsData);
+
+      const catMap = {};
+      catData.forEach(c => catMap[c.name] = c.value);
+      setExpensesByCategory(catMap);
     } catch (err) {
       console.error(err);
     } finally {
@@ -51,18 +49,17 @@ const Budgets = () => {
     const month = new Date().toISOString().slice(0, 7);
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/budgets`, {
+      await apiRequest('/api/budgets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ category: bCategory, amount: Number(bAmount), month })
+        token,
+        body: { category: bCategory, amount: Number(bAmount), month },
       });
-      if (res.ok) {
-        setBCategory(''); setBAmount('');
-        fetchData();
-      } else {
-        alert(await res.text());
-      }
-    } catch (err) { }
+      setBCategory('');
+      setBAmount('');
+      fetchData();
+    } catch (err) {
+      alert(err.message || 'Failed to create budget.');
+    }
   };
 
   const addGoal = async (e) => {
@@ -70,27 +67,30 @@ const Budgets = () => {
     if (!gName || !gTarget) return;
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/goals`, {
+      await apiRequest('/api/goals', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ name: gName, target_amount: Number(gTarget), current_amount: 0 })
+        token,
+        body: { name: gName, target_amount: Number(gTarget), current_amount: 0 },
       });
-      if (res.ok) {
-        setGName(''); setGTarget('');
-        fetchData();
-      }
-    } catch (err) { }
+      setGName('');
+      setGTarget('');
+      fetchData();
+    } catch (err) {
+      alert(err.message || 'Failed to create goal.');
+    }
   };
 
   const deleteItem = async (type, id) => {
     if (!window.confirm(`Delete ${type}?`)) return;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/${type}s/${id}`, {
+      await apiRequest(`/api/${type}s/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        token,
       });
-      if (res.ok) fetchData();
-    } catch (err) {}
+      fetchData();
+    } catch (err) {
+      alert(err.message || `Failed to delete ${type}.`);
+    }
   };
 
   if (loading) return (
@@ -103,7 +103,7 @@ const Budgets = () => {
     <div className="flex flex-col gap-6">
       
       {/* Header */}
-      <div className="glass-panel p-6 shadow-none bg-transparent border-0 !p-0">
+      <div className="glass-panel shadow-none bg-transparent border-0 !p-0">
         <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Budgets & Goals</h2>
         <p className="text-slate-400 text-sm">Set category limits and track your savings</p>
       </div>

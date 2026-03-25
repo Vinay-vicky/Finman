@@ -57,8 +57,64 @@ const oauthLogin = async (email, name) => {
   return newUser.rows[0];
 };
 
+const getUserById = async (userId) => {
+  const result = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [userId] });
+  return result.rows[0] || null;
+};
+
+const createRefreshTokenSession = async (userId, tokenHash, expiresAt) => {
+  await db.execute({
+    sql: 'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
+    args: [userId, tokenHash, expiresAt],
+  });
+};
+
+const getValidRefreshTokenSession = async (tokenHash) => {
+  const result = await db.execute({
+    sql: `
+      SELECT * FROM refresh_tokens
+      WHERE token_hash = ?
+        AND revoked_at IS NULL
+        AND datetime(expires_at) > datetime('now')
+      LIMIT 1
+    `,
+    args: [tokenHash],
+  });
+
+  return result.rows[0] || null;
+};
+
+const revokeRefreshTokenSession = async (tokenHash) => {
+  await db.execute({
+    sql: `
+      UPDATE refresh_tokens
+      SET revoked_at = CURRENT_TIMESTAMP
+      WHERE token_hash = ?
+        AND revoked_at IS NULL
+    `,
+    args: [tokenHash],
+  });
+};
+
+const revokeAllRefreshTokensForUser = async (userId) => {
+  await db.execute({
+    sql: `
+      UPDATE refresh_tokens
+      SET revoked_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+        AND revoked_at IS NULL
+    `,
+    args: [userId],
+  });
+};
+
 module.exports = {
   registerUser,
   loginUser,
   oauthLogin,
+  getUserById,
+  createRefreshTokenSession,
+  getValidRefreshTokenSession,
+  revokeRefreshTokenSession,
+  revokeAllRefreshTokensForUser,
 };

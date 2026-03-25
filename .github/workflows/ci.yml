@@ -1,0 +1,77 @@
+name: FinMan CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Gitleaks scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check backend JS files
+        run: find . -name "*.js" -not -path "./node_modules/*" -print0 | xargs -0 -n1 node --check
+
+      - name: Validate backend env example keys
+        run: |
+          grep -q '^JWT_SECRET=' .env.example
+          grep -q '^REFRESH_TOKEN_SECRET=' .env.example
+          grep -q '^GOOGLE_CLIENT_ID=' .env.example
+          grep -q '^CORS_ORIGIN=' .env.example
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Validate frontend env example keys
+        run: |
+          grep -q '^VITE_API_URL=' .env.example
+          grep -q '^VITE_GOOGLE_CLIENT_ID=' .env.example

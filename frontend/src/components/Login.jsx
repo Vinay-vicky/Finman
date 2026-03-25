@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
+import { apiRequest } from '../services/api';
 
 const Login = ({ onSwitch }) => {
   const { login } = useContext(AuthContext);
@@ -11,16 +12,10 @@ const Login = ({ onSwitch }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/login`, {
+      const data = await apiRequest('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: { username, password },
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
       
       login(data.user, data.token);
     } catch (err) {
@@ -30,16 +25,10 @@ const Login = ({ onSwitch }) => {
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`, {
+      const data = await apiRequest('/api/auth/google', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: credentialResponse.credential })
+        body: { credential: credentialResponse.credential },
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Google Login failed');
-      }
       
       login(data.user, data.token);
     } catch (err) {

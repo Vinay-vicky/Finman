@@ -1,14 +1,25 @@
 const jwt = require('jsonwebtoken');
-const SECRET_KEY = 'super_secret_key_for_finman_local'; // Normally in .env
+const AppError = require('../utils/appError');
+
+const SECRET_KEY = process.env.JWT_SECRET;
 
 const authenticateToken = (req, res, next) => {
+  if (!SECRET_KEY) {
+    return next(new AppError(500, 'Server authentication is not configured.'));
+  }
+
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer TOKEN"
 
-  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+  if (!token) {
+    return next(new AppError(401, 'Access denied. No token provided.'));
+  }
 
   jwt.verify(token, SECRET_KEY, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid or expired token.' });
+    if (err) {
+      return next(new AppError(403, 'Invalid or expired token.'));
+    }
+
     req.user = user;
     next();
   });

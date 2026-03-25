@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
+import { apiRequest } from '../services/api';
 
 const Signup = ({ onSwitch }) => {
   const { login } = useContext(AuthContext);
@@ -11,16 +12,10 @@ const Signup = ({ onSwitch }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/register`, {
+      const data = await apiRequest('/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: { username, password },
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Registration failed');
-      }
       
       login(data.user, data.token);
     } catch (err) {
@@ -30,16 +25,10 @@ const Signup = ({ onSwitch }) => {
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`, {
+      const data = await apiRequest('/api/auth/google', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: credentialResponse.credential })
+        body: { credential: credentialResponse.credential },
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Google Registration failed');
-      }
       
       login(data.user, data.token);
     } catch (err) {
@@ -62,7 +51,7 @@ const Signup = ({ onSwitch }) => {
           <label className="block text-sm font-medium text-slate-300 mb-2">Username</label>
           <input 
             type="text" 
-            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all w-full"
+            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
@@ -74,7 +63,7 @@ const Signup = ({ onSwitch }) => {
           <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
           <input 
             type="password" 
-            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all w-full"
+            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required

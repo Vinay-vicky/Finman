@@ -1,44 +1,47 @@
 const goalService = require('../services/goalService');
+const AppError = require('../utils/appError');
 
-const getGoals = async (req, res) => {
+const getGoals = async (req, res, next) => {
   try {
     const goals = await goalService.getGoals(req.user.id);
     res.json(goals);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 
-const createGoal = async (req, res) => {
+const createGoal = async (req, res, next) => {
   try {
     const goal = await goalService.createGoal(req.user.id, req.body);
     res.status(201).json(goal);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 
-const updateGoal = async (req, res) => {
+const updateGoal = async (req, res, next) => {
   try {
     await goalService.updateGoal(req.user.id, req.params.id, req.body);
     res.json({ message: 'Goal updated' });
   } catch (err) {
     if (err.message === 'Goal not found or unauthorized.') {
-      return res.status(404).json({ error: err.message });
+      return next(new AppError(404, err.message));
     }
-    res.status(500).json({ error: err.message });
+
+    return next(err);
   }
 };
 
-const deleteGoal = async (req, res) => {
+const deleteGoal = async (req, res, next) => {
   try {
     await goalService.deleteGoal(req.user.id, req.params.id);
     res.json({ message: 'Goal deleted' });
   } catch (err) {
     if (err.message === 'Goal not found or unauthorized.') {
-      return res.status(404).json({ error: err.message });
+      return next(new AppError(404, err.message));
     }
-    res.status(500).json({ error: err.message });
+
+    return next(err);
   }
 };
 

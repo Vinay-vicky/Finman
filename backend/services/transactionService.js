@@ -67,6 +67,18 @@ const createTransaction = async (userId, data) => {
   return newTx.rows[0];
 };
 
+const updateTransaction = async (userId, transactionId, data) => {
+  const result = await db.execute({
+    sql: 'UPDATE transactions SET title = ?, amount = ?, type = ?, category = ?, date = ? WHERE id = ? AND user_id = ?',
+    args: [data.title, data.amount, data.type, data.category, data.date || null, transactionId, userId]
+  });
+  if (result.rowsAffected === 0) {
+    throw new Error('Transaction not found or unauthorized.');
+  }
+  const updatedTx = await db.execute({ sql: 'SELECT * FROM transactions WHERE id = ?', args: [transactionId] });
+  return updatedTx.rows[0];
+};
+
 const deleteTransaction = async (userId, transactionId) => {
   const result = await db.execute({
     sql: 'DELETE FROM transactions WHERE id = ? AND user_id = ?',
@@ -76,6 +88,14 @@ const deleteTransaction = async (userId, transactionId) => {
     throw new Error('Transaction not found or unauthorized.');
   }
   return result;
+};
+
+module.exports = {
+  getTransactions,
+  getAllTransactionsForExport,
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
 };
 
 module.exports = {
