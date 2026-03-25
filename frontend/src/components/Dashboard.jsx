@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import TransactionForm from './TransactionForm';
 import TransactionList from './TransactionList';
 import CalendarPicker from './CalendarPicker';
-import { Calendar } from 'lucide-react';
+import RecurringManager from './RecurringManager';
+import { Calendar, PlusCircle } from 'lucide-react';
 
-const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpdateTransaction }) => {
+const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpdateTransaction, onRefreshTransactions }) => {
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTransaction, setEditingTransaction] = useState(null);
-  const [filterMode, setFilterMode] = useState('date'); // 'date', 'week', 'month', 'all'
+  const [filterMode, setFilterMode] = useState('date'); // 'date', 'week', 'month', 'year', 'all'
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
@@ -40,6 +41,10 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
     if (filterMode === 'month') {
       return txDate.getMonth() === selectedDate.getMonth() && txDate.getFullYear() === selectedDate.getFullYear();
     }
+
+    if (filterMode === 'year') {
+      return txDate.getFullYear() === selectedDate.getFullYear();
+    }
     
     if (filterMode === 'all') return true;
     
@@ -70,11 +75,20 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
     setShowCalendar(false);
   };
 
-  const formattedDateDisplay = selectedDate.toLocaleDateString('en-IN', {
+  const jumpToQuickAdd = () => {
+    const formEl = document.getElementById('quick-add-form');
+    if (formEl) {
+      formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const formattedDateDisplay = selectedDate.toLocaleString('en-IN', {
     weekday: 'short',
     year: 'numeric',
     month: 'short',
-    day: 'numeric'
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
   });
 
   return (
@@ -99,7 +113,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
             className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-400 rounded-lg transition-all font-medium shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 transform hover:-translate-y-0.5"
           >
             <Calendar size={18} />
-            Pick Date
+            Pick Date & Time
           </button>
 
           {/* Filter Mode Toggle */}
@@ -108,6 +122,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
               { mode: 'date', label: 'Day' },
               { mode: 'week', label: 'Week' },
               { mode: 'month', label: 'Month' },
+              { mode: 'year', label: 'Year' },
               { mode: 'all', label: 'All' }
             ].map(({ mode, label }) => (
               <button 
@@ -176,14 +191,17 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
 
       {/* Main Grid: Form + List */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-6 items-start">
-        <div className="sticky top-6">
-          <TransactionForm 
-            onAdd={onAddTransaction}
-            onUpdate={handleUpdate}
-            editingTransaction={editingTransaction}
-            onCancelEdit={() => setEditingTransaction(null)}
-            selectedDate={filterMode === 'date' ? selectedDate : null}
-          />
+        <div>
+          <div id="quick-add-form" className="sticky top-6">
+            <TransactionForm 
+              onAdd={onAddTransaction}
+              onUpdate={handleUpdate}
+              editingTransaction={editingTransaction}
+              onCancelEdit={() => setEditingTransaction(null)}
+              selectedDate={filterMode === 'date' ? selectedDate : null}
+            />
+          </div>
+          <RecurringManager onRefreshTransactions={onRefreshTransactions} />
         </div>
         <div className="glass-panel p-6 rounded-2xl">
           <TransactionList 
@@ -193,6 +211,13 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
           />
         </div>
       </div>
+
+      <button
+        onClick={jumpToQuickAdd}
+        className="md:hidden fixed bottom-20 right-4 z-40 px-4 py-3 rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 flex items-center gap-2 font-semibold"
+      >
+        <PlusCircle size={18} /> Quick Add
+      </button>
     </div>
   );
 };

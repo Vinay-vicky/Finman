@@ -24,6 +24,8 @@ const transactionQuerySchema = z.object({
   type: z.enum(['income', 'expense']).optional(),
   sort: z.enum(['date', 'amount', 'title']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   paginate: z.enum(['true', 'false']).optional(),

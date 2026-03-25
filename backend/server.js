@@ -7,6 +7,8 @@ const authRoutes = require('./routes/auth');
 const analyticsRoutes = require('./routes/analytics');
 const budgetRoutes = require('./routes/budgets');
 const goalRoutes = require('./routes/goals');
+const recurringRoutes = require('./routes/recurring');
+const categoryRoutes = require('./routes/categories');
 const { errorHandler, notFoundHandler } = require('./middleware/errors');
 const AppError = require('./utils/appError');
 const logger = require('./utils/logger');
@@ -91,6 +93,8 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/budgets', budgetRoutes);
 app.use('/api/goals', goalRoutes);
+app.use('/api/recurring', recurringRoutes);
+app.use('/api/categories', categoryRoutes);
 
 
 // Health check endpoint

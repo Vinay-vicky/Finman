@@ -136,6 +136,7 @@ function App() {
                       onAddTransaction={handleAddTransaction}
                       onDeleteTransaction={handleDeleteTransaction}
                       onUpdateTransaction={handleUpdateTransaction}
+                      onRefreshTransactions={fetchTransactions}
                     />
                   } />
                   <Route path="/analytics" element={<Analytics transactions={transactions} />} />

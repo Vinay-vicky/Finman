@@ -15,8 +15,8 @@ const getTransactions = async (req, res, next) => {
 const exportTransactions = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const rows = await transactionService.getAllTransactionsForExport(userId);
-    
+    const rows = await transactionService.getAllTransactionsForExport(userId, req.query);
+
     const parser = new Parser();
     const csv = parser.parse(rows);
     res.header('Content-Type', 'text/csv');

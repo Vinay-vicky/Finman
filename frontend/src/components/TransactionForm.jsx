@@ -1,17 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { PlusCircle, X } from 'lucide-react';
+import { AuthContext } from '../context/AuthContext';
+import { apiRequest } from '../services/api';
+
+const DEFAULT_CATEGORIES = {
+  income: ['Salary', 'Freelance', 'Investments', 'Other'],
+  expense: ['Groceries', 'Utilities', 'Entertainment', 'Transport', 'Healthcare', 'Other'],
+};
 
 const TransactionForm = ({ onAdd, onUpdate, editingTransaction, onCancelEdit, selectedDate }) => {
+  const { token } = useContext(AuthContext);
+
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState('expense');
-  const [category, setCategory] = useState('Groceries');
+  const [category, setCategory] = useState(DEFAULT_CATEGORIES.expense[0]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
 
-  const categories = {
-    income: ['Salary', 'Freelance', 'Investments', 'Other'],
-    expense: ['Groceries', 'Utilities', 'Entertainment', 'Transport', 'Healthcare', 'Other']
-  };
+  useEffect(() => {
+    if (!token) return;
+
+    const loadCategories = async () => {
+      try {
+        const rows = await apiRequest('/api/categories', { token });
+        if (!Array.isArray(rows) || rows.length === 0) return;
+
+        const grouped = {
+          income: [...DEFAULT_CATEGORIES.income],
+          expense: [...DEFAULT_CATEGORIES.expense],
+        };
+
+        rows.forEach((row) => {
+          const key = row.type === 'income' ? 'income' : 'expense';
+          if (row.name && !grouped[key].includes(row.name)) {
+            grouped[key].push(row.name);
+          }
+        });
+
+        setCategories(grouped);
+      } catch (err) {
+        console.error('Failed to load categories for form:', err);
+      }
+    };
+
+    loadCategories();
+  }, [token]);
 
   useEffect(() => {
     if (editingTransaction) {
@@ -33,19 +67,19 @@ const TransactionForm = ({ onAdd, onUpdate, editingTransaction, onCancelEdit, se
     setTitle('');
     setAmount('');
     setType('expense');
-    setCategory(categories.expense[0]);
+    setCategory((categories.expense && categories.expense[0]) || 'Other');
     setDate(new Date().toISOString().split('T')[0]);
   };
 
   const handleTypeChange = (newType) => {
     setType(newType);
-    setCategory(categories[newType][0]);
+    setCategory((categories[newType] && categories[newType][0]) || 'Other');
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!title || !amount || !category) return;
-    
+
     let parsedAmount = 0;
     try {
       const safeMath = amount.replace(/[^0-9+\-*/.() ]/g, '');
@@ -65,7 +99,7 @@ const TransactionForm = ({ onAdd, onUpdate, editingTransaction, onCancelEdit, se
       amount: parsedAmount,
       type,
       category,
-      date: new Date(date).toISOString()
+      date: new Date(date).toISOString(),
     };
 
     if (editingTransaction) {
@@ -95,17 +129,15 @@ const TransactionForm = ({ onAdd, onUpdate, editingTransaction, onCancelEdit, se
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        
-        {/* Type Toggle */}
         <div className="flex p-1 bg-slate-900/50 rounded-xl border border-slate-700/50 hover:border-slate-600/50 transition-colors">
-          <button 
+          <button
             type="button"
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all ${type === 'expense' ? 'bg-red-500/20 text-red-400 border border-red-500/30 shadow-lg shadow-red-500/10' : 'text-slate-400 hover:text-slate-200'}`}
             onClick={() => handleTypeChange('expense')}
           >
             Expense
           </button>
-          <button 
+          <button
             type="button"
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all ${type === 'income' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:text-slate-200'}`}
             onClick={() => handleTypeChange('income')}
@@ -113,55 +145,51 @@ const TransactionForm = ({ onAdd, onUpdate, editingTransaction, onCancelEdit, se
             Income
           </button>
         </div>
-        
-        {/* Title */}
+
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">Title</label>
-          <input 
-            type="text" 
-            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all placeholder:text-slate-500 hover:bg-slate-900/70 hover:border-slate-600" 
-            placeholder="e.g. Monthly Groceries" 
-            value={title} 
+          <input
+            type="text"
+            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all placeholder:text-slate-500 hover:bg-slate-900/70 hover:border-slate-600"
+            placeholder="e.g. Monthly Groceries"
+            value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
           />
         </div>
 
-        {/* Amount */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="block text-sm font-medium text-slate-300">Amount (₹)</label>
             <span className="text-xs text-slate-500 italic">Supports math (e.g. 50+20)</span>
           </div>
-          <input 
-            type="text" 
-            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all placeholder:text-slate-500 font-mono text-lg hover:bg-slate-900/70 hover:border-slate-600" 
-            placeholder="0.00" 
-            value={amount} 
+          <input
+            type="text"
+            className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all placeholder:text-slate-500 font-mono text-lg hover:bg-slate-900/70 hover:border-slate-600"
+            placeholder="0.00"
+            value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
           />
         </div>
 
-        {/* Category */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">Category</label>
-          <select 
+          <select
             className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all hover:bg-slate-900/70 hover:border-slate-600 cursor-pointer"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             required
           >
-            {categories[type].map(cat => (
+            {(categories[type] || ['Other']).map((cat) => (
               <option key={cat} value={cat} className="bg-slate-800">{cat}</option>
             ))}
           </select>
         </div>
 
-        {/* Date */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">Date</label>
-          <input 
+          <input
             type="date"
             className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/30 transition-all hover:bg-slate-900/70 hover:border-slate-600 cursor-pointer"
             value={date}
@@ -170,12 +198,11 @@ const TransactionForm = ({ onAdd, onUpdate, editingTransaction, onCancelEdit, se
           />
         </div>
 
-        {/* Submit Button */}
-        <button 
+        <button
           type="submit"
           className={`w-full py-3 px-4 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 transform hover:-translate-y-0.5 active:translate-y-0 ${
-            editingTransaction 
-              ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40' 
+            editingTransaction
+              ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40'
               : 'bg-slate-700 hover:bg-slate-600 text-white shadow-lg shadow-slate-700/20 hover:shadow-slate-600/40'
           }`}
         >

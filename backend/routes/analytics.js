@@ -7,5 +7,7 @@ router.use(authenticateToken);
 
 router.get('/summary', analyticsController.getSummary);
 router.get('/charts/category', analyticsController.getCategoryCharts);
+router.get('/compare', analyticsController.getComparison);
+router.get('/report', analyticsController.getReport);
 
 module.exports = router;

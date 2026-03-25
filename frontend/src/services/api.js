@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const buildHeaders = (token, extraHeaders = {}) => ({
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -43,4 +43,37 @@ export const apiRequest = async (path, options = {}) => {
   }
 
   return payload;
+};
+
+export const apiDownload = async (path, options = {}) => {
+  const {
+    method = 'GET',
+    token,
+    headers = {},
+    credentials = 'include',
+    filename = 'download.csv',
+  } = options;
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    credentials,
+    headers: buildHeaders(token, headers),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    const error = new Error(text || 'Download failed.');
+    error.status = response.status;
+    throw error;
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
 };
