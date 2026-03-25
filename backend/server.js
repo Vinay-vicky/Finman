@@ -18,10 +18,16 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const requiredEnvVars = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET'];
+const requiredEnvVars = ['JWT_SECRET'];
 const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
 if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+}
+
+// Use JWT_SECRET as fallback for REFRESH_TOKEN_SECRET if not provided
+if (!process.env.REFRESH_TOKEN_SECRET) {
+  logger.warn('⚠️  REFRESH_TOKEN_SECRET not set. Using JWT_SECRET as fallback (not recommended for production).');
+  process.env.REFRESH_TOKEN_SECRET = process.env.JWT_SECRET;
 }
 
 // Connect to MongoDB -> Changed to Turso DB
