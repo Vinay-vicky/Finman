@@ -62,10 +62,17 @@ const getUserById = async (userId) => {
   return result.rows[0] || null;
 };
 
-const createRefreshTokenSession = async (userId, tokenHash, expiresAt) => {
+const createRefreshTokenSession = async (userId, tokenHash, expiresAt, metadata = {}) => {
   await db.execute({
-    sql: 'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
-    args: [userId, tokenHash, expiresAt],
+    sql: `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip_address)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [
+      userId,
+      tokenHash,
+      expiresAt,
+      metadata.userAgent || null,
+      metadata.ipAddress || null,
+    ],
   });
 };
 
@@ -84,6 +91,20 @@ const getValidRefreshTokenSession = async (tokenHash) => {
   return result.rows[0] || null;
 };
 
+const listRefreshTokenSessions = async (userId) => {
+  const result = await db.execute({
+    sql: `
+      SELECT id, user_id, expires_at, revoked_at, createdAt, user_agent, ip_address
+      FROM refresh_tokens
+      WHERE user_id = ?
+      ORDER BY createdAt DESC
+    `,
+    args: [userId],
+  });
+
+  return result.rows;
+};
+
 const revokeRefreshTokenSession = async (tokenHash) => {
   await db.execute({
     sql: `
@@ -94,6 +115,23 @@ const revokeRefreshTokenSession = async (tokenHash) => {
     `,
     args: [tokenHash],
   });
+};
+
+const revokeRefreshTokenSessionById = async (userId, sessionId) => {
+  const result = await db.execute({
+    sql: `
+      UPDATE refresh_tokens
+      SET revoked_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND user_id = ?
+        AND revoked_at IS NULL
+    `,
+    args: [sessionId, userId],
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error('Session not found or already revoked.');
+  }
 };
 
 const revokeAllRefreshTokensForUser = async (userId) => {
@@ -115,6 +153,8 @@ module.exports = {
   getUserById,
   createRefreshTokenSession,
   getValidRefreshTokenSession,
+  listRefreshTokenSessions,
   revokeRefreshTokenSession,
+  revokeRefreshTokenSessionById,
   revokeAllRefreshTokensForUser,
 };

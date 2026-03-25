@@ -14,11 +14,17 @@ const googleSchema = z.object({
 	credential: z.string().min(1, 'Google credential is required.'),
 });
 
+const sessionIdSchema = z.object({
+	id: z.coerce.number().int().positive('Session id must be a positive number.'),
+});
+
 router.post('/register', validate(credentialsSchema), authController.register);
 router.post('/login', validate(credentialsSchema), authController.login);
 router.post('/google', validate(googleSchema), authController.googleLogin);
 router.post('/refresh', authController.refresh);
 router.post('/logout', authController.logout);
+router.get('/sessions', authenticateToken, authController.listSessions);
+router.delete('/sessions/:id', authenticateToken, validate(sessionIdSchema, 'params'), authController.revokeSession);
 router.post('/logout-all', authenticateToken, authController.logoutAll);
 
 module.exports = router;

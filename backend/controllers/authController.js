@@ -37,7 +37,7 @@ const createRefreshToken = (user) => jwt.sign(
   { expiresIn: `${REFRESH_TOKEN_EXPIRES_DAYS}d` }
 );
 
-const issueSession = async (res, user) => {
+const issueSession = async (req, res, user) => {
   if (!REFRESH_TOKEN_SECRET) {
     throw new AppError(500, 'Refresh token secret is not configured.');
   }
@@ -46,7 +46,10 @@ const issueSession = async (res, user) => {
   const refreshTokenHash = hashToken(refreshToken);
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  await authService.createRefreshTokenSession(user.id, refreshTokenHash, expiresAt);
+  await authService.createRefreshTokenSession(user.id, refreshTokenHash, expiresAt, {
+    userAgent: req.get('user-agent') || null,
+    ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+  });
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, cookieOptions());
 
   return {
@@ -61,7 +64,7 @@ const register = async (req, res, next) => {
 
   try {
     const user = await authService.registerUser(username, password);
-    const session = await issueSession(res, user);
+    const session = await issueSession(req, res, user);
 
     res.status(201).json(session);
   } catch (err) {
@@ -78,7 +81,7 @@ const login = async (req, res, next) => {
 
   try {
     const user = await authService.loginUser(username, password);
-    const session = await issueSession(res, user);
+    const session = await issueSession(req, res, user);
 
     res.json(session);
   } catch (err) {
@@ -99,10 +102,10 @@ const googleLogin = async (req, res, next) => {
       audience: process.env.GOOGLE_CLIENT_ID, 
     });
     const payload = ticket.getPayload();
-    const { email, name } = payload;
+    const { email } = payload;
 
-    const user = await authService.oauthLogin(email, name);
-    const session = await issueSession(res, user);
+    const user = await authService.oauthLogin(email);
+    const session = await issueSession(req, res, user);
 
     res.json(session);
   } catch (err) {
@@ -138,7 +141,7 @@ const refresh = async (req, res, next) => {
     }
 
     await authService.revokeRefreshTokenSession(tokenHash);
-    const nextSession = await issueSession(res, user);
+    const nextSession = await issueSession(req, res, user);
     return res.json(nextSession);
   } catch (err) {
     res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions());
@@ -161,6 +164,38 @@ const logout = async (req, res, next) => {
   }
 };
 
+const listSessions = async (req, res, next) => {
+  try {
+    const sessions = await authService.listRefreshTokenSessions(req.user.id);
+    const tokenFromCookie = req.cookies?.[REFRESH_COOKIE_NAME];
+    let currentSessionId = null;
+
+    if (tokenFromCookie) {
+      const tokenHash = hashToken(tokenFromCookie);
+      const currentSession = await authService.getValidRefreshTokenSession(tokenHash);
+      if (currentSession) {
+        currentSessionId = currentSession.id;
+      }
+    }
+
+    return res.json({ sessions, currentSessionId });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+const revokeSession = async (req, res, next) => {
+  try {
+    await authService.revokeRefreshTokenSessionById(req.user.id, req.params.id);
+    return res.json({ success: true, message: 'Session revoked.' });
+  } catch (err) {
+    if (err.message === 'Session not found or already revoked.') {
+      return next(new AppError(404, err.message));
+    }
+    return next(err);
+  }
+};
+
 const logoutAll = async (req, res, next) => {
   try {
     await authService.revokeAllRefreshTokensForUser(req.user.id);
@@ -177,6 +212,8 @@ module.exports = {
   googleLogin,
   refresh,
   logout,
+  listSessions,
+  revokeSession,
   logoutAll,
 };
 

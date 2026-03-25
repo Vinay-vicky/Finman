@@ -1,10 +1,10 @@
 import React, { useContext } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, PieChart, Target, Moon, Sun, LogOut } from 'lucide-react';
+import { LayoutDashboard, PieChart, Target, FileText, Shield, Moon, Sun, LogOut } from 'lucide-react';
 import { ThemeContext } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
 
-const Navigation = () => {
+const Navigation = ({ onPrefetchRoute }) => {
   const { theme, toggleTheme } = useContext(ThemeContext);
   const { logout, user } = useContext(AuthContext);
 
@@ -14,6 +14,10 @@ const Navigation = () => {
         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]' 
         : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
     }`;
+  };
+
+  const prefetch = (key) => {
+    if (onPrefetchRoute) onPrefetchRoute(key);
   };
 
   return (
@@ -28,14 +32,20 @@ const Navigation = () => {
         </div>
         
         <div className="flex-1 flex flex-col gap-2">
-          <NavLink to="/" className={getNavLinkClass} end>
+          <NavLink to="/" className={getNavLinkClass} end onMouseEnter={() => prefetch('dashboard')} onFocus={() => prefetch('dashboard')}>
             <LayoutDashboard size={20} /> Dashboard
           </NavLink>
-          <NavLink to="/analytics" className={getNavLinkClass}>
+          <NavLink to="/analytics" className={getNavLinkClass} onMouseEnter={() => prefetch('analytics')} onFocus={() => prefetch('analytics')}>
             <PieChart size={20} /> Analytics
           </NavLink>
-          <NavLink to="/budgets" className={getNavLinkClass}>
+          <NavLink to="/budgets" className={getNavLinkClass} onMouseEnter={() => prefetch('budgets')} onFocus={() => prefetch('budgets')}>
             <Target size={20} /> Budgets & Goals
+          </NavLink>
+          <NavLink to="/reports" className={getNavLinkClass} onMouseEnter={() => prefetch('reports')} onFocus={() => prefetch('reports')}>
+            <FileText size={20} /> Reports
+          </NavLink>
+          <NavLink to="/settings" className={getNavLinkClass} onMouseEnter={() => prefetch('settings')} onFocus={() => prefetch('settings')}>
+            <Shield size={20} /> Settings
           </NavLink>
         </div>
 
@@ -60,6 +70,12 @@ const Navigation = () => {
         </NavLink>
         <NavLink to="/budgets" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <Target size={22} className="mb-1" />
+        </NavLink>
+        <NavLink to="/reports" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+          <FileText size={22} className="mb-1" />
+        </NavLink>
+        <NavLink to="/settings" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+          <Shield size={22} className="mb-1" />
         </NavLink>
         <button onClick={logout} className="p-3 rounded-xl text-slate-400 hover:text-red-400 transition-all">
           <LogOut size={22} className="mb-1" />

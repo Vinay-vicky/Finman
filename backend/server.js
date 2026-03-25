@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const os = require('os');
 require('dotenv').config();
 const transactionRoutes = require('./routes/transactions');
 const authRoutes = require('./routes/auth');
@@ -9,6 +10,8 @@ const budgetRoutes = require('./routes/budgets');
 const goalRoutes = require('./routes/goals');
 const recurringRoutes = require('./routes/recurring');
 const categoryRoutes = require('./routes/categories');
+const recurringService = require('./services/recurringService');
+const { getAnalyticsCacheMetrics } = require('./services/analyticsService');
 const { errorHandler, notFoundHandler } = require('./middleware/errors');
 const AppError = require('./utils/appError');
 const logger = require('./utils/logger');
@@ -19,6 +22,20 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const recurringJobRuntime = {
+  enabled: false,
+  instanceId: null,
+  intervalMs: 0,
+  leaseMs: 0,
+  startedAt: null,
+  lastRunAt: null,
+  lastDurationMs: 0,
+  lastCreated: 0,
+  lastUsersProcessed: 0,
+  lastError: null,
+  leaseSkips: 0,
+  runs: 0,
+};
 
 const requiredEnvVars = ['JWT_SECRET'];
 const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
@@ -102,10 +119,63 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Backend is running', requestId: req.requestId });
 });
 
+app.get('/api/health/perf', (req, res) => {
+  res.json({
+    status: 'ok',
+    requestId: req.requestId,
+    uptimeSec: Number(process.uptime().toFixed(1)),
+    analyticsCache: getAnalyticsCacheMetrics(),
+    recurringJob: recurringJobRuntime,
+  });
+});
+
 app.use(notFoundHandler);
 
 app.use(errorHandler);
 
 app.listen(PORT, () => {
   logger.info(`Server is running on port ${PORT}`);
+
+  const recurringJobEnabled = (process.env.RECURRING_JOB_ENABLED || 'true').toLowerCase() === 'true';
+  const recurringJobIntervalMs = Number(process.env.RECURRING_JOB_INTERVAL_MS || 300000);
+  const recurringJobLeaseMs = Number(process.env.RECURRING_JOB_LEASE_MS || Math.max(recurringJobIntervalMs * 2, 60000));
+  const recurringJobInstanceId = process.env.RECURRING_JOB_INSTANCE_ID || `${os.hostname()}-${process.pid}`;
+
+  if (recurringJobEnabled && recurringJobIntervalMs > 0) {
+    recurringJobRuntime.enabled = true;
+    recurringJobRuntime.instanceId = recurringJobInstanceId;
+    recurringJobRuntime.intervalMs = recurringJobIntervalMs;
+    recurringJobRuntime.leaseMs = recurringJobLeaseMs;
+    recurringJobRuntime.startedAt = new Date().toISOString();
+
+    setInterval(async () => {
+      const runStartedAt = Date.now();
+      try {
+        const lease = await recurringService.tryAcquireRecurringJobLease(recurringJobInstanceId, recurringJobLeaseMs);
+        if (!lease.acquired) {
+          recurringJobRuntime.leaseSkips += 1;
+          return;
+        }
+
+        const result = await recurringService.materializeDueRecurringForAllUsers(new Date());
+        recurringJobRuntime.lastRunAt = new Date().toISOString();
+        recurringJobRuntime.lastDurationMs = Date.now() - runStartedAt;
+        recurringJobRuntime.lastCreated = Number(result.created) || 0;
+        recurringJobRuntime.lastUsersProcessed = Number(result.usersProcessed) || 0;
+        recurringJobRuntime.lastError = null;
+        recurringJobRuntime.runs += 1;
+
+        if ((result.created || 0) > 0) {
+          logger.info('Recurring background batch processed', result);
+        }
+      } catch (err) {
+        recurringJobRuntime.lastRunAt = new Date().toISOString();
+        recurringJobRuntime.lastDurationMs = Date.now() - runStartedAt;
+        recurringJobRuntime.lastError = err.message;
+        logger.error('Recurring background batch failed', { message: err.message });
+      }
+    }, recurringJobIntervalMs).unref?.();
+
+    logger.info(`Recurring background job enabled (interval: ${recurringJobIntervalMs}ms, lease: ${recurringJobLeaseMs}ms)`);
+  }
 });

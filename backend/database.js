@@ -66,6 +66,7 @@ const connectDB = async () => {
         category TEXT NOT NULL,
         frequency TEXT NOT NULL CHECK(frequency IN ('daily', 'weekly', 'monthly', 'yearly')),
         next_date DATETIME NOT NULL,
+        paused INTEGER DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )`,
       `CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -74,10 +75,53 @@ const connectDB = async () => {
         token_hash TEXT NOT NULL UNIQUE,
         expires_at DATETIME NOT NULL,
         revoked_at DATETIME,
+        user_agent TEXT,
+        ip_address TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
-      )`
+      )`,
+      `CREATE TABLE IF NOT EXISTS job_locks (
+        lock_name TEXT PRIMARY KEY,
+        holder_id TEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
     ], 'write');
+
+    // Lightweight migrations for existing local/hosted DBs.
+    const migrationStatements = [
+      `ALTER TABLE recurring_transactions ADD COLUMN paused INTEGER DEFAULT 0`,
+      `ALTER TABLE refresh_tokens ADD COLUMN user_agent TEXT`,
+      `ALTER TABLE refresh_tokens ADD COLUMN ip_address TEXT`,
+      `CREATE TABLE IF NOT EXISTS job_locks (
+        lock_name TEXT PRIMARY KEY,
+        holder_id TEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_transactions_user_type_date ON transactions(user_id, type, date DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_transactions_user_category_date ON transactions(user_id, category, date DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_budgets_user_month_category ON budgets(user_id, month, category)`,
+      `CREATE INDEX IF NOT EXISTS idx_goals_user ON goals(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_categories_user_type_name ON categories(user_id, type, name)`,
+      `CREATE INDEX IF NOT EXISTS idx_recurring_user_paused_nextdate ON recurring_transactions(user_id, paused, next_date)`,
+      `CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_revoked_expires ON refresh_tokens(user_id, revoked_at, expires_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_job_locks_expires_at ON job_locks(expires_at)`,
+    ];
+
+    for (const sql of migrationStatements) {
+      try {
+        await db.execute({ sql, args: [] });
+      } catch (migrationErr) {
+        // Ignore duplicate-column style migration errors.
+        const msg = String(migrationErr.message || '').toLowerCase();
+        const ignorable = msg.includes('duplicate') || msg.includes('already exists');
+        if (!ignorable) {
+          console.warn('Migration warning:', migrationErr.message);
+        }
+      }
+    }
     
     console.log('Database tables verified.');
   } catch (error) {

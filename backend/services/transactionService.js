@@ -1,5 +1,6 @@
 const { db } = require('../database');
 const recurringService = require('./recurringService');
+const { clearAnalyticsCacheForUser } = require('./analyticsService');
 
 const appendDateFilters = (query, args, filters) => {
   if (filters.from) {
@@ -84,6 +85,7 @@ const createTransaction = async (userId, data) => {
     args: [userId, data.title, data.amount, data.type, data.category, data.date || null],
   });
   const newTx = await db.execute({ sql: 'SELECT * FROM transactions WHERE id = ?', args: [Number(result.lastInsertRowid)] });
+  clearAnalyticsCacheForUser(userId);
   return newTx.rows[0];
 };
 
@@ -96,6 +98,7 @@ const updateTransaction = async (userId, transactionId, data) => {
     throw new Error('Transaction not found or unauthorized.');
   }
   const updatedTx = await db.execute({ sql: 'SELECT * FROM transactions WHERE id = ?', args: [transactionId] });
+  clearAnalyticsCacheForUser(userId);
   return updatedTx.rows[0];
 };
 
@@ -107,6 +110,7 @@ const deleteTransaction = async (userId, transactionId) => {
   if (result.rowsAffected === 0) {
     throw new Error('Transaction not found or unauthorized.');
   }
+  clearAnalyticsCacheForUser(userId);
   return result;
 };
 

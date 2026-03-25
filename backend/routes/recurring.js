@@ -13,6 +13,7 @@ const recurringSchema = z.object({
   category: z.string().min(1, 'Category is required'),
   frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
   next_date: z.string().optional(),
+  paused: z.coerce.boolean().optional(),
 });
 
 const recurringIdSchema = z.object({
