@@ -10,18 +10,44 @@ const Analytics = () => {
   const [summary, setSummary] = useState(null);
   const [categoryData, setCategoryData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
+    setError(null);
+    
     Promise.all([
       apiRequest('/api/analytics/summary', { token }),
       apiRequest('/api/analytics/charts/category', { token })
     ])
     .then(([summaryData, categoryChartData]) => {
-      setSummary(summaryData);
-      setCategoryData(categoryChartData);
-    }).catch(console.error)
+      // Ensure summary has numeric values
+      const processedSummary = {
+        income: Number(summaryData.income) || 0,
+        expense: Number(summaryData.expense) || 0,
+        balance: Number(summaryData.balance) || 0
+      };
+      
+      // Ensure category data is an array with numeric values
+      const processedCategories = Array.isArray(categoryChartData) 
+        ? categoryChartData.map(cat => ({
+            ...cat,
+            value: Number(cat.value) || 0
+          }))
+        : [];
+      
+      setSummary(processedSummary);
+      setCategoryData(processedCategories);
+    })
+    .catch(err => {
+      console.error('Analytics fetch error:', err);
+      setError(err.message || 'Failed to load analytics');
+    })
     .finally(() => setLoading(false));
   }, [token]);
 
@@ -32,8 +58,24 @@ const Analytics = () => {
       </div>
     );
   }
+
+  if (error) {
+    return (
+      <div className="glass-panel p-6 bg-red-500/10 border-red-500/30">
+        <h3 className="text-red-400 font-semibold mb-2">⚠️ Error Loading Analytics</h3>
+        <p className="text-red-300 text-sm">{error}</p>
+      </div>
+    );
+  }
   
-  if (!summary) return null;
+  if (!summary) {
+    return (
+      <div className="glass-panel p-6 bg-yellow-500/10 border-yellow-500/30">
+        <h3 className="text-yellow-400 font-semibold mb-2">No Data Available</h3>
+        <p className="text-yellow-300 text-sm">Add some transactions to see your analytics.</p>
+      </div>
+    );
+  }
 
   const barData = [
     { name: 'Income', amount: summary.income, fill: '#34d399' },
@@ -51,19 +93,19 @@ const Analytics = () => {
         <div className="glass-panel p-6 relative overflow-hidden">
           <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-2">Current Balance</p>
           <div className={`text-4xl font-extrabold ${summary.balance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            ₹{summary.balance.toFixed(2)}
+            ₹{summary.balance.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </div>
         </div>
         <div className="glass-panel p-6 relative overflow-hidden">
           <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-2">Total Income</p>
           <div className="text-4xl font-extrabold text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.3)]">
-            ₹{summary.income.toFixed(2)}
+            ₹{summary.income.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </div>
         </div>
         <div className="glass-panel p-6 relative overflow-hidden">
           <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-2">Total Expenses</p>
           <div className="text-4xl font-extrabold text-red-400 drop-shadow-[0_0_15px_rgba(248,113,113,0.3)]">
-            ₹{summary.expense.toFixed(2)}
+            ₹{summary.expense.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </div>
         </div>
       </div>
