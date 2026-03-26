@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { Shield, Trash2, LogOut, Activity, RefreshCw } from 'lucide-react';
+import { Shield, Trash2, LogOut, Activity, RefreshCw, Smartphone } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { apiRequest } from '../services/api';
 
@@ -35,6 +35,13 @@ const getPerfHealthStatus = (perf) => {
   return { label: 'Healthy', className: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10' };
 };
 
+const getOtpHealthStatus = (otpHealth) => {
+  if (!otpHealth) return { label: 'Unknown', className: 'text-slate-300 border-slate-500/40 bg-slate-500/10' };
+  if (!otpHealth.ready) return { label: 'Not Ready', className: 'text-red-300 border-red-500/40 bg-red-500/10' };
+  if (otpHealth.provider === 'mock') return { label: 'Mock Mode', className: 'text-amber-300 border-amber-500/40 bg-amber-500/10' };
+  return { label: 'Ready', className: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10' };
+};
+
 const Settings = () => {
   const { token, logout } = useContext(AuthContext);
   const [sessions, setSessions] = useState([]);
@@ -45,6 +52,11 @@ const Settings = () => {
   const [perfError, setPerfError] = useState(null);
   const [lastPerfRefreshAt, setLastPerfRefreshAt] = useState(null);
   const perfStatus = getPerfHealthStatus(perf);
+  const [otpHealth, setOtpHealth] = useState(null);
+  const [otpHealthLoading, setOtpHealthLoading] = useState(true);
+  const [otpHealthError, setOtpHealthError] = useState(null);
+  const [lastOtpHealthRefreshAt, setLastOtpHealthRefreshAt] = useState(null);
+  const otpStatus = getOtpHealthStatus(otpHealth);
 
   const loadSessions = async () => {
     if (!token) {
@@ -93,6 +105,30 @@ const Settings = () => {
     const intervalId = setInterval(() => {
       loadPerf({ silent: true });
     }, 15000);
+
+    return () => clearInterval(intervalId);
+  }, [token]);
+
+  const loadOtpHealth = async ({ silent = false } = {}) => {
+    if (!silent) setOtpHealthLoading(true);
+    try {
+      const data = await apiRequest('/api/auth/mobile/provider-health', { token });
+      setOtpHealth(data?.health || null);
+      setOtpHealthError(null);
+      setLastOtpHealthRefreshAt(new Date().toISOString());
+    } catch (err) {
+      console.error('Failed to load OTP provider health:', err);
+      setOtpHealthError(err.message || 'Failed to load OTP provider health.');
+    } finally {
+      if (!silent) setOtpHealthLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadOtpHealth();
+    const intervalId = setInterval(() => {
+      loadOtpHealth({ silent: true });
+    }, 30000);
 
     return () => clearInterval(intervalId);
   }, [token]);
@@ -188,6 +224,85 @@ const Settings = () => {
               ) : (
                 <p>
                   Last recurring error: <span className="text-emerald-300">None</span>
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="glass-panel p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Smartphone size={18} className="text-cyan-400" /> OTP Provider Health
+          </h3>
+          <div className="flex items-center gap-2">
+            {!otpHealthLoading && !otpHealthError && (
+              <span className={`text-xs px-2 py-1 rounded-full border ${otpStatus.className}`}>
+                {otpStatus.label}
+              </span>
+            )}
+            <button
+              onClick={() => loadOtpHealth()}
+              className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center gap-2"
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
+        </div>
+
+        {otpHealthLoading ? (
+          <p className="text-slate-400 text-sm">Loading OTP provider health...</p>
+        ) : otpHealthError ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+            <p className="text-amber-300 text-sm">{otpHealthError}</p>
+            <p className="text-amber-200/80 text-xs mt-1">Tip: ensure latest backend is deployed and OTP provider env vars are configured.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400">Provider</p>
+                <p className="text-lg font-bold text-cyan-300 uppercase">{otpHealth?.provider || '-'}</p>
+                <p className="text-[11px] text-slate-500">Mode: {otpHealth?.mode || '-'}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400">Ready</p>
+                <p className={`text-lg font-bold ${otpHealth?.ready ? 'text-emerald-300' : 'text-red-300'}`}>{otpHealth?.ready ? 'Yes' : 'No'}</p>
+                <p className="text-[11px] text-slate-500">Template: {otpHealth?.messageTemplateConfigured ? 'Configured' : 'Missing'}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400">Dev OTP Exposure</p>
+                <p className={`text-lg font-bold ${otpHealth?.exposeDevOtp ? 'text-amber-300' : 'text-emerald-300'}`}>{otpHealth?.exposeDevOtp ? 'Enabled' : 'Disabled'}</p>
+                <p className="text-[11px] text-slate-500">Set `OTP_EXPOSE_IN_RESPONSE=false` in production</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400">Last OTP Issued</p>
+                <p className="text-sm font-semibold text-slate-200">{formatDateTime(otpHealth?.metrics?.lastOtpIssuedAt)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400">Issued (1h)</p>
+                <p className="text-lg font-bold text-cyan-300">{otpHealth?.metrics?.issuedLastHour ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400">Consumed (1h)</p>
+                <p className="text-lg font-bold text-emerald-300">{otpHealth?.metrics?.consumedLastHour ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-400">Active Unconsumed</p>
+                <p className="text-lg font-bold text-amber-300">{otpHealth?.metrics?.activeUnconsumed ?? 0}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3 text-xs text-slate-400 space-y-1">
+              <p>Last refresh: <span className="text-slate-300">{formatDateTime(lastOtpHealthRefreshAt)}</span></p>
+              {otpHealth?.details && (
+                <p>
+                  Provider details:{' '}
+                  <span className="text-slate-300">{Object.entries(otpHealth.details).map(([k, v]) => `${k}=${v ?? '-'}`).join(' • ')}</span>
                 </p>
               )}
             </div>

@@ -43,7 +43,12 @@ const Login = ({ onSwitch }) => {
       setOtpExpiresAt(data.expiresAt || '');
       setOtpDevHint(data.devOtp || '');
     } catch (err) {
-      setError(err.message);
+      const msg = String(err.message || 'Failed to request OTP.');
+      if (msg.toLowerCase().includes('mock otp provider is disabled')) {
+        setError('OTP delivery is not configured on server yet. Ask admin to set OTP_PROVIDER=twilio and Twilio credentials.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setOtpLoading(false);
     }

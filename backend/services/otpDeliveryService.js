@@ -2,6 +2,7 @@ const logger = require('../utils/logger');
 
 const OTP_PROVIDER = String(process.env.OTP_PROVIDER || 'mock').toLowerCase();
 const OTP_MESSAGE_TEMPLATE = process.env.OTP_MESSAGE_TEMPLATE || 'Your FinMan OTP is {{OTP}}. It expires in {{TTL}} minutes. Do not share this code.';
+const IS_PRODUCTION = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 
 const renderMessage = ({ otp, ttlMinutes }) => OTP_MESSAGE_TEMPLATE
   .replace(/\{\{\s*OTP\s*\}\}/g, String(otp))
@@ -47,6 +48,7 @@ const sendViaTwilio = async ({ mobileNumber, message }) => {
   return {
     provider: 'twilio',
     messageId: payload.sid,
+    delivered: true,
   };
 };
 
@@ -58,11 +60,16 @@ const sendViaMock = async ({ mobileNumber, message }) => {
   return {
     provider: 'mock',
     messageId: null,
+    delivered: false,
   };
 };
 
 const sendOtp = async ({ mobileNumber, otp, ttlMinutes }) => {
   const message = renderMessage({ otp, ttlMinutes });
+
+  if (IS_PRODUCTION && OTP_PROVIDER === 'mock') {
+    throw new Error('Mock OTP provider is disabled in production. Configure OTP_PROVIDER=twilio.');
+  }
 
   if (OTP_PROVIDER === 'twilio') {
     return sendViaTwilio({ mobileNumber, message });
@@ -73,8 +80,7 @@ const sendOtp = async ({ mobileNumber, otp, ttlMinutes }) => {
 
 const shouldExposeDevOtp = () => {
   const explicitlyEnabled = String(process.env.OTP_EXPOSE_IN_RESPONSE || 'false').toLowerCase() === 'true';
-  const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
-  return !isProduction && (OTP_PROVIDER === 'mock' || explicitlyEnabled);
+  return !IS_PRODUCTION && (OTP_PROVIDER === 'mock' || explicitlyEnabled);
 };
 
 const maskToken = (value, keepStart = 3, keepEnd = 2) => {
@@ -86,10 +92,9 @@ const maskToken = (value, keepStart = 3, keepEnd = 2) => {
 
 const getProviderHealth = () => {
   const provider = OTP_PROVIDER;
-  const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
   const base = {
     provider,
-    mode: isProduction ? 'production' : 'non-production',
+    mode: IS_PRODUCTION ? 'production' : 'non-production',
     exposeDevOtp: shouldExposeDevOtp(),
     messageTemplateConfigured: Boolean(OTP_MESSAGE_TEMPLATE && OTP_MESSAGE_TEMPLATE.trim()),
   };
@@ -111,9 +116,11 @@ const getProviderHealth = () => {
 
   return {
     ...base,
-    ready: true,
+    ready: !IS_PRODUCTION,
     details: {
-      note: 'Mock provider active. OTPs are logged locally and can be exposed in non-production if enabled.',
+      note: IS_PRODUCTION
+        ? 'Mock provider is not allowed in production. Configure Twilio to send real OTPs.'
+        : 'Mock provider active. OTPs are logged locally and can be exposed in non-production if enabled.',
     },
   };
 };

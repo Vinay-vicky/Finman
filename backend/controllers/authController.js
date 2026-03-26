@@ -219,7 +219,7 @@ const requestMobileOtp = async (req, res, next) => {
       ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
     });
 
-    await otpDeliveryService.sendOtp({
+    const delivery = await otpDeliveryService.sendOtp({
       mobileNumber,
       otp: otpInfo.otp,
       ttlMinutes: otpInfo.ttlMinutes,
@@ -229,6 +229,7 @@ const requestMobileOtp = async (req, res, next) => {
       success: true,
       message: 'If the mobile number is valid, an OTP has been sent.',
       expiresAt: otpInfo.expiresAt,
+      deliveryProvider: delivery.provider,
     };
 
     if (otpDeliveryService.shouldExposeDevOtp()) {
@@ -240,8 +241,9 @@ const requestMobileOtp = async (req, res, next) => {
     if (err.message === 'Too many OTP requests. Please try again later.') {
       return next(new AppError(429, err.message));
     }
-    if (String(err.message || '').toLowerCase().includes('twilio')) {
-      return next(new AppError(503, 'OTP provider is currently unavailable. Please try again shortly.'));
+    const lower = String(err.message || '').toLowerCase();
+    if (lower.includes('twilio') || lower.includes('mock otp provider is disabled')) {
+      return next(new AppError(503, err.message || 'OTP provider is currently unavailable. Please try again shortly.'));
     }
     return next(err);
   }
@@ -275,9 +277,13 @@ const verifyMobileOtp = async (req, res, next) => {
 const getMobileOtpProviderHealth = async (req, res, next) => {
   try {
     const health = otpDeliveryService.getProviderHealth();
+    const metrics = await authService.getOtpDeliveryMetrics();
     return res.json({
       success: true,
-      health,
+      health: {
+        ...health,
+        metrics,
+      },
     });
   } catch (err) {
     return next(err);

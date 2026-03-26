@@ -333,6 +333,27 @@ const verifyMobileOtpCode = async (mobileNumber, otp, purpose = 'login') => {
   return true;
 };
 
+const getOtpDeliveryMetrics = async () => {
+  const result = await db.execute({
+    sql: `
+      SELECT
+        MAX(createdAt) AS lastOtpIssuedAt,
+        SUM(CASE WHEN datetime(createdAt) >= datetime('now', '-1 hour') THEN 1 ELSE 0 END) AS issuedLastHour,
+        SUM(CASE WHEN consumed_at IS NOT NULL AND datetime(consumed_at) >= datetime('now', '-1 hour') THEN 1 ELSE 0 END) AS consumedLastHour,
+        SUM(CASE WHEN consumed_at IS NULL AND datetime(expires_at) > datetime('now') THEN 1 ELSE 0 END) AS activeUnconsumed
+      FROM mobile_otp_codes
+    `,
+    args: [],
+  });
+
+  return {
+    lastOtpIssuedAt: result.rows[0]?.lastOtpIssuedAt || null,
+    issuedLastHour: Number(result.rows[0]?.issuedLastHour || 0),
+    consumedLastHour: Number(result.rows[0]?.consumedLastHour || 0),
+    activeUnconsumed: Number(result.rows[0]?.activeUnconsumed || 0),
+  };
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -343,6 +364,7 @@ module.exports = {
   normalizeMobileNumber,
   createMobileOtpCode,
   verifyMobileOtpCode,
+  getOtpDeliveryMetrics,
   createRefreshTokenSession,
   getValidRefreshTokenSession,
   listRefreshTokenSessions,
