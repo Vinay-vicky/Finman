@@ -6,12 +6,17 @@ import { apiDownload, apiRequest } from '../services/api';
 
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
-const ActionCard = ({ title, subtitle, icon: Icon, children }) => (
+const ActionCard = ({ title, subtitle, icon: Icon, status, children }) => (
   <section className="glass-panel p-5 rounded-2xl border border-slate-700/50">
     <div className="flex items-start justify-between gap-3 mb-4">
       <div>
         <h3 className="text-white text-lg font-semibold">{title}</h3>
         <p className="text-slate-400 text-sm">{subtitle}</p>
+        {status && (
+          <p className="text-[11px] mt-1 text-slate-500">
+            {status.loading ? 'Syncing…' : `Last updated: ${status.updatedAt || '—'}`}
+          </p>
+        )}
       </div>
       <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
         <Icon size={18} />
@@ -49,6 +54,20 @@ const toInputDate = (date) => {
   return d.toISOString().slice(0, 10);
 };
 
+const getDefaultActivityQuery = () => {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - 30);
+  return {
+    page: 1,
+    limit: 8,
+    action: '',
+    entityType: '',
+    from: toInputDate(from),
+    to: toInputDate(to),
+  };
+};
+
 const Pager = ({ data, onPrev, onNext }) => {
   const page = data?.page || 1;
   const totalPages = data?.totalPages || 1;
@@ -65,6 +84,8 @@ const NextLevel = () => {
   const { token } = useContext(AuthContext);
   const [results, setResults] = useState({});
   const [loadingKey, setLoadingKey] = useState('');
+  const [activeLoads, setActiveLoads] = useState({});
+  const [lastUpdated, setLastUpdated] = useState({});
 
   const [netWorthForm, setNetWorthForm] = useState({ name: '', kind: 'asset', value: '' });
   const [scenarioForm, setScenarioForm] = useState({ monthlySavingsBoost: 200, expenseCutPct: 5, months: 12 });
@@ -84,19 +105,7 @@ const NextLevel = () => {
   const [rulesQuery, setRulesQuery] = useState({ page: 1, limit: 5, search: '' });
   const [billsQuery, setBillsQuery] = useState({ page: 1, limit: 5, search: '' });
   const [householdsQuery, setHouseholdsQuery] = useState({ page: 1, limit: 5, search: '' });
-  const [activityQuery, setActivityQuery] = useState(() => {
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - 30);
-    return {
-      page: 1,
-      limit: 8,
-      action: '',
-      entityType: '',
-      from: toInputDate(from),
-      to: toInputDate(to),
-    };
-  });
+  const [activityQuery, setActivityQuery] = useState(() => getDefaultActivityQuery());
   const [activityIntegrity, setActivityIntegrity] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [selectedNetWorthIds, setSelectedNetWorthIds] = useState([]);
@@ -126,9 +135,11 @@ const NextLevel = () => {
 
   const callApi = async (key, path, options = {}, feedback = {}) => {
     setLoadingKey(key);
+    setActiveLoads((prev) => ({ ...prev, [key]: true }));
     try {
       const data = await apiRequest(path, { token, ...options });
       setResults((prev) => ({ ...prev, [key]: data }));
+      setLastUpdated((prev) => ({ ...prev, [key]: Date.now() }));
       if (feedback.success) pushToast('success', feedback.success);
       return data;
     } catch (err) {
@@ -137,8 +148,20 @@ const NextLevel = () => {
       return null;
     } finally {
       setLoadingKey('');
+      setActiveLoads((prev) => ({ ...prev, [key]: false }));
     }
   };
+
+  const getStatus = (...keys) => ({
+    loading: keys.some((k) => Boolean(activeLoads[k])),
+    updatedAt: (() => {
+      const latestTs = keys
+        .map((k) => Number(lastUpdated[k] || 0))
+        .filter((v) => Number.isFinite(v) && v > 0)
+        .reduce((max, curr) => (curr > max ? curr : max), 0);
+      return latestTs ? new Date(latestTs).toLocaleString() : null;
+    })(),
+  });
 
   const qs = (params = {}) => {
     const usp = new URLSearchParams();
@@ -185,15 +208,50 @@ const NextLevel = () => {
   const loadActivityIntegrity = async () => {
     const data = await apiRequest('/api/next-level/activity/integrity', { token });
     setActivityIntegrity(data);
+    setLastUpdated((prev) => ({ ...prev, 'activity-integrity': Date.now() }));
     return data;
   };
 
   useEffect(() => {
     if (!token) return;
-    loadActivityTimeline(activityQuery);
     loadActivityIntegrity().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const timer = setTimeout(() => loadNetWorth(netWorthQuery), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, netWorthQuery]);
+
+  useEffect(() => {
+    if (!token) return;
+    const timer = setTimeout(() => loadRules(rulesQuery), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, rulesQuery]);
+
+  useEffect(() => {
+    if (!token) return;
+    const timer = setTimeout(() => loadBills(billsQuery), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, billsQuery]);
+
+  useEffect(() => {
+    if (!token) return;
+    const timer = setTimeout(() => loadHouseholds(householdsQuery), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, householdsQuery]);
+
+  useEffect(() => {
+    if (!token) return;
+    const timer = setTimeout(() => loadActivityTimeline(activityQuery), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activityQuery]);
 
   const toggleSelected = (setter, current, id) => {
     setter(current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
@@ -687,7 +745,7 @@ const NextLevel = () => {
           <ErrorState error={results.anomalies?.error} />
         </ActionCard>
 
-        <ActionCard title="4) Net Worth Tracker" subtitle="Track assets and liabilities" icon={Wallet}>
+        <ActionCard title="4) Net Worth Tracker" subtitle="Track assets and liabilities" icon={Wallet} status={getStatus('networth', 'networth-save')}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input className="input-glass" placeholder="Name" value={netWorthForm.name} onChange={(e) => setNetWorthForm((p) => ({ ...p, name: e.target.value }))} />
             <select className="input-glass" value={netWorthForm.kind} onChange={(e) => setNetWorthForm((p) => ({ ...p, kind: e.target.value }))}>
@@ -732,8 +790,8 @@ const NextLevel = () => {
             >
               {netWorthForm.id ? 'Update Item' : 'Save Item'}
             </button>
-            <button className="btn-secondary" onClick={() => loadNetWorth(netWorthQuery)}>
-              Refresh Net Worth
+            <button className="btn-secondary" disabled={Boolean(activeLoads.networth)} onClick={() => loadNetWorth(netWorthQuery)}>
+              {activeLoads.networth ? 'Refreshing…' : 'Refresh Net Worth'}
             </button>
             <button className="btn-secondary" disabled={selectedNetWorthIds.length === 0} onClick={bulkDeleteNetWorth}>
               <Trash2 size={14} className="inline mr-1" /> Delete Selected ({selectedNetWorthIds.length})
@@ -826,7 +884,7 @@ const NextLevel = () => {
           <ErrorState error={results.subscriptions?.error} />
         </ActionCard>
 
-        <ActionCard title="6) Rules Engine" subtitle="Auto-tagging and transformation rules" icon={SlidersHorizontal}>
+        <ActionCard title="6) Rules Engine" subtitle="Auto-tagging and transformation rules" icon={SlidersHorizontal} status={getStatus('rules', 'rule-save', 'rule-sim')}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <input className="input-glass" placeholder="Rule name" value={ruleForm.name} onChange={(e) => setRuleForm((p) => ({ ...p, name: e.target.value }))} />
             <select className="input-glass" value={ruleForm.field} onChange={(e) => setRuleForm((p) => ({ ...p, field: e.target.value }))}>
@@ -844,6 +902,13 @@ const NextLevel = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
             <input className="input-glass" placeholder="Match value" value={ruleForm.value} onChange={(e) => setRuleForm((p) => ({ ...p, value: e.target.value }))} />
+            <select className="input-glass" value={ruleForm.action_type} onChange={(e) => setRuleForm((p) => ({ ...p, action_type: e.target.value }))}>
+              <option value="set_category">set_category</option>
+              <option value="set_type">set_type</option>
+              <option value="set_title">set_title</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-2 mt-2">
             <input className="input-glass" placeholder="Action value" value={ruleForm.action_value} onChange={(e) => setRuleForm((p) => ({ ...p, action_value: e.target.value }))} />
           </div>
           <div className="mt-2 flex gap-2">
@@ -872,7 +937,7 @@ const NextLevel = () => {
                 setRuleForm({ name: 'Groceries auto-tag', field: 'title', operator: 'contains', value: 'mart', action_type: 'set_category', action_value: 'Groceries' });
               }
             }}>{ruleForm.id ? 'Update Rule' : 'Save Rule'}</button>
-            <button className="btn-secondary" onClick={() => loadRules(rulesQuery)}>List Rules</button>
+            <button className="btn-secondary" disabled={Boolean(activeLoads.rules)} onClick={() => loadRules(rulesQuery)}>{activeLoads.rules ? 'Loading…' : 'List Rules'}</button>
             <button className="btn-secondary" disabled={selectedRuleIds.length === 0} onClick={bulkDeleteRules}><Trash2 size={14} className="inline mr-1" /> Delete Selected ({selectedRuleIds.length})</button>
             <button className="btn-secondary" onClick={() => setRuleForm({ name: 'Groceries auto-tag', field: 'title', operator: 'contains', value: 'mart', action_type: 'set_category', action_value: 'Groceries' })}>Clear</button>
             <button className="btn-secondary" onClick={() => exportRows('rules', results.rules?.items || [], [
@@ -888,7 +953,13 @@ const NextLevel = () => {
             <input className="input-glass" placeholder="Sample title" value={ruleSample.title} onChange={(e) => setRuleSample((p) => ({ ...p, title: e.target.value }))} />
             <input className="input-glass" placeholder="Amount" type="number" value={ruleSample.amount} onChange={(e) => setRuleSample((p) => ({ ...p, amount: Number(e.target.value || 0) }))} />
             <input className="input-glass" placeholder="Category" value={ruleSample.category} onChange={(e) => setRuleSample((p) => ({ ...p, category: e.target.value }))} />
-            <button className="btn-secondary" onClick={() => callApi('rule-sim', '/api/next-level/rules/simulate', { method: 'POST', body: ruleSample })}>Simulate</button>
+            <select className="input-glass" value={ruleSample.type} onChange={(e) => setRuleSample((p) => ({ ...p, type: e.target.value }))}>
+              <option value="expense">expense</option>
+              <option value="income">income</option>
+            </select>
+          </div>
+          <div className="mt-2 grid grid-cols-1 md:grid-cols-1 gap-2">
+            <button className="btn-secondary" disabled={Boolean(activeLoads['rule-sim'])} onClick={() => callApi('rule-sim', '/api/next-level/rules/simulate', { method: 'POST', body: ruleSample })}>{activeLoads['rule-sim'] ? 'Simulating…' : 'Simulate'}</button>
           </div>
           <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
             <input className="input-glass" placeholder="Search rules" value={rulesQuery.search} onChange={(e) => setRulesQuery((p) => ({ ...p, search: e.target.value, page: 1 }))} />
@@ -933,7 +1004,7 @@ const NextLevel = () => {
           <ErrorState error={results.rules?.error || results['rule-save']?.error || results['rule-sim']?.error} />
         </ActionCard>
 
-        <ActionCard title="7) Bill Calendar" subtitle="Up-next obligations and bill tracking" icon={CalendarClock}>
+        <ActionCard title="7) Bill Calendar" subtitle="Up-next obligations and bill tracking" icon={CalendarClock} status={getStatus('bills', 'bill-save', 'bills-upcoming')}>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
             <input className="input-glass" placeholder="Bill name" value={billForm.name} onChange={(e) => setBillForm((p) => ({ ...p, name: e.target.value }))} />
             <input className="input-glass" placeholder="Amount" type="number" value={billForm.amount} onChange={(e) => setBillForm((p) => ({ ...p, amount: Number(e.target.value || 0) }))} />
@@ -969,8 +1040,8 @@ const NextLevel = () => {
                 setBillForm({ name: 'Internet', amount: 49.99, due_day: 10, category: 'Utilities' });
               }
             }}>{billForm.id ? 'Update Bill' : 'Save Bill'}</button>
-            <button className="btn-secondary" onClick={() => callApi('bills-upcoming', '/api/next-level/bills/upcoming?dueWithinDays=30')}>Upcoming Bills</button>
-            <button className="btn-secondary" onClick={() => loadBills(billsQuery)}>List Bills</button>
+            <button className="btn-secondary" disabled={Boolean(activeLoads['bills-upcoming'])} onClick={() => callApi('bills-upcoming', '/api/next-level/bills/upcoming?dueWithinDays=30')}>{activeLoads['bills-upcoming'] ? 'Checking…' : 'Upcoming Bills'}</button>
+            <button className="btn-secondary" disabled={Boolean(activeLoads.bills)} onClick={() => loadBills(billsQuery)}>{activeLoads.bills ? 'Loading…' : 'List Bills'}</button>
             <button className="btn-secondary" disabled={selectedBillIds.length === 0} onClick={bulkDeleteBills}><Trash2 size={14} className="inline mr-1" /> Delete Selected ({selectedBillIds.length})</button>
             <button className="btn-secondary" onClick={() => setBillForm({ name: 'Internet', amount: 49.99, due_day: 10, category: 'Utilities' })}>Clear</button>
             <button className="btn-secondary" onClick={() => exportRows('bills', results.bills?.items || [], [
@@ -1023,17 +1094,49 @@ const NextLevel = () => {
           <ErrorState error={results.bills?.error || results['bill-save']?.error || results['bills-upcoming']?.error} />
         </ActionCard>
 
-        <ActionCard title="8) Family Spaces" subtitle="Shared finance spaces via invite code" icon={Users}>
+        <ActionCard title="8) Family Spaces" subtitle="Shared finance spaces via invite code" icon={Users} status={getStatus('households', 'household-create', 'household-join')}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <input className="input-glass" placeholder="New household name" value={householdName} onChange={(e) => setHouseholdName(e.target.value)} />
-            <button className="btn-primary" onClick={() => callApi('household-create', '/api/next-level/households', { method: 'POST', body: { name: householdName } })}>Create Household</button>
+            <button
+              className="btn-primary"
+              onClick={async () => {
+                const created = await callApi(
+                  'household-create',
+                  '/api/next-level/households',
+                  { method: 'POST', body: { name: householdName } },
+                  { success: 'Household created.' }
+                );
+                if (created) {
+                  await loadHouseholds({ ...householdsQuery, page: 1 });
+                  setHouseholdName('Family HQ');
+                }
+              }}
+            >
+              Create Household
+            </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
             <input className="input-glass" placeholder="Invite code" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} />
-            <button className="btn-secondary" onClick={() => callApi('household-join', '/api/next-level/households/join', { method: 'POST', body: { inviteCode } })}>Join via Code</button>
+            <button
+              className="btn-secondary"
+              onClick={async () => {
+                const joined = await callApi(
+                  'household-join',
+                  '/api/next-level/households/join',
+                  { method: 'POST', body: { inviteCode } },
+                  { success: 'Joined household.' }
+                );
+                if (joined) {
+                  await loadHouseholds({ ...householdsQuery, page: 1 });
+                  setInviteCode('');
+                }
+              }}
+            >
+              Join via Code
+            </button>
           </div>
           <div className="mt-2">
-            <button className="btn-secondary" onClick={() => loadHouseholds(householdsQuery)}>List My Households</button>
+            <button className="btn-secondary" disabled={Boolean(activeLoads.households)} onClick={() => loadHouseholds(householdsQuery)}>{activeLoads.households ? 'Loading…' : 'List My Households'}</button>
             <button className="btn-secondary ml-2" onClick={() => exportRows('households', results.households?.items || [], [
               { label: 'Name', value: (r) => r.name },
               { label: 'Invite Code', value: (r) => r.invite_code },
@@ -1093,7 +1196,7 @@ const NextLevel = () => {
           <ErrorState error={results.tax?.error} />
         </ActionCard>
 
-        <ActionCard title="Activity Timeline" subtitle="Server-backed audit trail across sessions/devices" icon={CalendarClock}>
+        <ActionCard title="Activity Timeline" subtitle="Server-backed audit trail across sessions/devices" icon={CalendarClock} status={getStatus('activity', 'activity-integrity')}>
           <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
             <select
               className="input-glass"
@@ -1129,38 +1232,39 @@ const NextLevel = () => {
               value={activityQuery.to || ''}
               onChange={(e) => setActivityQuery((p) => ({ ...p, to: e.target.value, page: 1 }))}
             />
-            <button className="btn-primary" onClick={() => loadActivityTimeline(activityQuery)}>
-              Load Timeline
+            <button className="btn-primary" disabled={Boolean(activeLoads.activity)} onClick={() => loadActivityTimeline(activityQuery)}>
+              {activeLoads.activity ? 'Loading…' : 'Load Timeline'}
             </button>
             <button
               className="btn-secondary"
-              onClick={() => apiDownload(`/api/next-level/activity/export${qs(activityQuery)}`, {
-                token,
-                filename: `activity-timeline-${new Date().toISOString().slice(0, 10)}.csv`,
-              })}
+              onClick={async () => {
+                try {
+                  await apiDownload(`/api/next-level/activity/export${qs(activityQuery)}`, {
+                    token,
+                    filename: `activity-timeline-${new Date().toISOString().slice(0, 10)}.csv`,
+                  });
+                  pushToast('success', 'Activity CSV exported.');
+                } catch (err) {
+                  pushToast('error', err.message || 'Failed to export activity CSV.');
+                }
+              }}
             >
               <Download size={14} className="inline mr-1" /> CSV
             </button>
             <button className="btn-secondary" onClick={async () => {
-              const info = await loadActivityIntegrity();
-              pushToast(info.valid ? 'success' : 'error', info.valid ? 'Activity chain integrity verified.' : 'Integrity check failed.');
+              try {
+                const info = await loadActivityIntegrity();
+                pushToast(info.valid ? 'success' : 'error', info.valid ? 'Activity chain integrity verified.' : 'Integrity check failed.');
+              } catch (err) {
+                pushToast('error', err.message || 'Integrity check failed.');
+              }
             }}>
               Verify Integrity
             </button>
             <button
               className="btn-secondary"
               onClick={() => {
-                const to = new Date();
-                const from = new Date();
-                from.setDate(from.getDate() - 30);
-                const resetQuery = {
-                  page: 1,
-                  limit: 8,
-                  action: '',
-                  entityType: '',
-                  from: toInputDate(from),
-                  to: toInputDate(to),
-                };
+                const resetQuery = getDefaultActivityQuery();
                 setActivityQuery(resetQuery);
                 loadActivityTimeline(resetQuery);
               }}

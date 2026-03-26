@@ -220,8 +220,18 @@ const listNetWorthItems = async (userId, query = {}) => {
   });
   const total = Number(count.rows[0]?.total || 0);
 
-  const assets = result.rows.filter((r) => r.kind === 'asset').reduce((a, r) => a + toNumber(r.value), 0);
-  const liabilities = result.rows.filter((r) => r.kind === 'liability').reduce((a, r) => a + toNumber(r.value), 0);
+  const aggregates = await db.execute({
+    sql: `
+      SELECT
+        COALESCE(SUM(CASE WHEN kind = 'asset' THEN value ELSE 0 END), 0) AS assets,
+        COALESCE(SUM(CASE WHEN kind = 'liability' THEN value ELSE 0 END), 0) AS liabilities
+      FROM net_worth_items
+      WHERE ${whereSql}
+    `,
+    args,
+  });
+  const assets = toNumber(aggregates.rows[0]?.assets);
+  const liabilities = toNumber(aggregates.rows[0]?.liabilities);
 
   return {
     ...toPaginated(result.rows, total, page, limit),
@@ -485,17 +495,34 @@ const getUpcomingBills = async (userId, query = {}) => {
   const base = await listBills(userId, { ...query, active: 'true', page: 1, limit: 200 });
   const bills = base.items;
   const today = new Date();
-  const day = today.getDate();
+  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const dueWithinDays = Math.max(1, Number(query.dueWithinDays || 31));
+
+  const buildNextDueDate = (dueDay) => {
+    const year = startToday.getFullYear();
+    const month = startToday.getMonth();
+    const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+    const currentMonthDue = new Date(year, month, Math.min(dueDay, daysInCurrentMonth));
+    if (currentMonthDue >= startToday) {
+      return currentMonthDue;
+    }
+
+    const nextMonth = month + 1;
+    const nextYear = nextMonth > 11 ? year + 1 : year;
+    const normalizedNextMonth = nextMonth % 12;
+    const daysInNextMonth = new Date(nextYear, normalizedNextMonth + 1, 0).getDate();
+    return new Date(nextYear, normalizedNextMonth, Math.min(dueDay, daysInNextMonth));
+  };
 
   const upcoming = bills
     .map((b) => {
       const dueDay = Number(b.due_day);
-      let daysUntil = dueDay - day;
-      if (daysUntil < 0) daysUntil += 30;
+      const nextDue = buildNextDueDate(dueDay);
+      const daysUntil = Math.ceil((nextDue - startToday) / (1000 * 60 * 60 * 24));
       return {
         ...b,
         daysUntil,
+        nextDueDate: nextDue.toISOString().slice(0, 10),
       };
     })
     .filter((b) => b.daysUntil <= dueWithinDays)
@@ -600,7 +627,7 @@ const listActivityTimeline = async (userId, query = {}) => {
     args.push(String(query.from));
   }
   if (query.to) {
-    where.push('datetime(createdAt) <= datetime(?)');
+    where.push("datetime(createdAt) < datetime(?, '+1 day')");
     args.push(String(query.to));
   }
 
