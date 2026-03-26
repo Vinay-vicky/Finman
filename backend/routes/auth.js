@@ -6,9 +6,15 @@ const authController = require('../controllers/authController');
 const validate = require('../middleware/validate');
 const { authenticateToken } = require('../middleware/authMiddleware');
 
-const credentialsSchema = z.object({
+const loginSchema = z.object({
 	username: z.string().trim().min(3, 'Username must be at least 3 characters.'),
 	password: z.string().min(6, 'Password must be at least 6 characters.'),
+});
+
+const registerSchema = z.object({
+	username: z.string().trim().min(3, 'Username must be at least 3 characters.'),
+	password: z.string().min(6, 'Password must be at least 6 characters.'),
+	mobileNumber: z.string().trim().min(8).max(20).optional(),
 });
 
 const googleSchema = z.object({
@@ -36,8 +42,8 @@ const otpLimiter = rateLimit({
 	message: 'Too many OTP attempts from this IP. Please try again later.',
 });
 
-router.post('/register', validate(credentialsSchema), authController.register);
-router.post('/login', validate(credentialsSchema), authController.login);
+router.post('/register', validate(registerSchema), authController.register);
+router.post('/login', validate(loginSchema), authController.login);
 router.post('/google', validate(googleSchema), authController.googleLogin);
 router.post('/mobile/request-otp', otpLimiter, validate(mobileOtpRequestSchema), authController.requestMobileOtp);
 router.post('/mobile/verify-otp', otpLimiter, validate(mobileOtpVerifySchema), authController.verifyMobileOtp);

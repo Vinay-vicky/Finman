@@ -2,10 +2,12 @@ import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 import { apiRequest } from '../services/api';
+import CountryCodePicker from './CountryCodePicker';
 
 const Login = ({ onSwitch }) => {
   const { login } = useContext(AuthContext);
   const [authMode, setAuthMode] = useState('password');
+  const [countryCode, setCountryCode] = useState('+91');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
@@ -13,8 +15,12 @@ const Login = ({ onSwitch }) => {
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpExpiresAt, setOtpExpiresAt] = useState('');
   const [otpDevHint, setOtpDevHint] = useState('');
+  const [otpDeliveryProvider, setOtpDeliveryProvider] = useState('');
+  const [otpInfo, setOtpInfo] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const normalizedLocalMobile = mobileNumber.replace(/\D/g, '').slice(0, 12);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,13 +41,21 @@ const Login = ({ onSwitch }) => {
     try {
       setOtpLoading(true);
       setError(null);
+      setOtpInfo('');
+      const fullMobileNumber = `${countryCode}${normalizedLocalMobile}`;
       const data = await apiRequest('/api/auth/mobile/request-otp', {
         method: 'POST',
-        body: { mobileNumber },
+        body: { mobileNumber: fullMobileNumber },
       });
       setOtpRequested(true);
       setOtpExpiresAt(data.expiresAt || '');
       setOtpDevHint(data.devOtp || '');
+      setOtpDeliveryProvider(data.deliveryProvider || '');
+      if (data.deliveryProvider === 'mock') {
+        setOtpInfo('Server is currently using MOCK OTP provider. Real SMS may not be delivered in this mode.');
+      } else {
+        setOtpInfo('OTP requested successfully. Please check your SMS inbox.');
+      }
     } catch (err) {
       const msg = String(err.message || 'Failed to request OTP.');
       if (msg.toLowerCase().includes('mock otp provider is disabled')) {
@@ -58,9 +72,10 @@ const Login = ({ onSwitch }) => {
     try {
       setOtpLoading(true);
       setError(null);
+      const fullMobileNumber = `${countryCode}${normalizedLocalMobile}`;
       const data = await apiRequest('/api/auth/mobile/verify-otp', {
         method: 'POST',
-        body: { mobileNumber, otp },
+        body: { mobileNumber: fullMobileNumber, otp },
       });
       login(data.user, data.token);
     } catch (err) {
@@ -147,13 +162,30 @@ const Login = ({ onSwitch }) => {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Mobile Number</label>
-            <input
-              type="tel"
-              className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
-              value={mobileNumber}
-              onChange={(e) => setMobileNumber(e.target.value)}
-              placeholder="e.g. +91 9876543210"
-            />
+            <div className="flex items-center gap-2">
+              <CountryCodePicker
+                value={countryCode}
+                onChange={(nextCode) => {
+                  setCountryCode(nextCode);
+                  setOtpRequested(false);
+                  setOtp('');
+                  setOtpInfo('');
+                  setOtpDevHint('');
+                }}
+                helperText="Country code defaults to India and can be searched/changed from dropdown."
+              />
+              <input
+                type="tel"
+                inputMode="numeric"
+                className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
+                value={normalizedLocalMobile}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 12);
+                  setMobileNumber(digits);
+                }}
+                placeholder="Enter mobile number"
+              />
+            </div>
           </div>
 
           {otpRequested && (
@@ -174,7 +206,7 @@ const Login = ({ onSwitch }) => {
             <button
               type="button"
               onClick={handleRequestOtp}
-              disabled={otpLoading || !mobileNumber.trim()}
+              disabled={otpLoading || normalizedLocalMobile.length < 6}
               className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed text-slate-100 font-semibold py-3 rounded-lg border border-slate-600/70 transition-all"
             >
               {otpLoading ? 'Requesting…' : otpRequested ? 'Resend OTP' : 'Request OTP'}
@@ -192,6 +224,12 @@ const Login = ({ onSwitch }) => {
           <p className="text-xs text-slate-400">
             OTP expires in a few minutes{otpExpiresAt ? ` (until ${new Date(otpExpiresAt).toLocaleTimeString()})` : ''}.
           </p>
+          {otpDeliveryProvider && (
+            <p className="text-xs text-slate-400">Delivery provider: <span className="uppercase font-semibold text-slate-300">{otpDeliveryProvider}</span></p>
+          )}
+          {otpInfo && (
+            <p className={`text-xs ${otpDeliveryProvider === 'mock' ? 'text-amber-300' : 'text-emerald-300'}`}>{otpInfo}</p>
+          )}
           {otpDevHint && (
             <p className="text-xs text-amber-300">
               Dev OTP: <span className="font-semibold tracking-[0.2em]">{otpDevHint}</span>

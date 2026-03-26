@@ -61,15 +61,16 @@ const issueSession = async (req, res, user) => {
 
 
 const register = async (req, res, next) => {
-  const { username, password } = req.body;
+  const { username, password, mobileNumber } = req.body;
 
   try {
-    const user = await authService.registerUser(username, password);
+    const normalizedMobile = mobileNumber ? authService.normalizeMobileNumber(mobileNumber) : null;
+    const user = await authService.registerUser(username, password, normalizedMobile);
     const session = await issueSession(req, res, user);
 
     res.status(201).json(session);
   } catch (err) {
-    if (err.message === 'Username already exists.') {
+    if (err.message === 'Username already exists.' || err.message === 'Mobile number is already registered.') {
       return next(new AppError(400, err.message));
     }
 

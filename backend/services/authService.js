@@ -23,18 +23,25 @@ const hashOtp = (mobileNumber, otp) => crypto
 
 const generateOtp = () => String(crypto.randomInt(100000, 1000000));
 
-const registerUser = async (username, password) => {
+const registerUser = async (username, password, mobileNumber = null) => {
   const existing = await db.execute({ sql: 'SELECT * FROM users WHERE username = ?', args: [username] });
   if (existing.rows.length > 0) {
     throw new Error('Username already exists.');
+  }
+
+  if (mobileNumber) {
+    const existingMobile = await db.execute({ sql: 'SELECT id FROM users WHERE mobile_number = ? LIMIT 1', args: [mobileNumber] });
+    if (existingMobile.rows.length > 0) {
+      throw new Error('Mobile number is already registered.');
+    }
   }
 
   const salt = await bcrypt.genSalt(10);
   const hashedPassword = await bcrypt.hash(password, salt);
 
   const result = await db.execute({
-    sql: 'INSERT INTO users (username, password) VALUES (?, ?)',
-    args: [username, hashedPassword]
+    sql: 'INSERT INTO users (username, mobile_number, password) VALUES (?, ?, ?)',
+    args: [username, mobileNumber || null, hashedPassword]
   });
   
   const insertId = Number(result.lastInsertRowid);

@@ -2,19 +2,29 @@ import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 import { apiRequest } from '../services/api';
+import CountryCodePicker from './CountryCodePicker';
 
 const Signup = ({ onSwitch }) => {
   const { login } = useContext(AuthContext);
+  const [countryCode, setCountryCode] = useState('+91');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
   const [error, setError] = useState(null);
+
+  const normalizedLocalMobile = mobileNumber.replace(/\D/g, '').slice(0, 12);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const payload = {
+        username,
+        password,
+        ...(normalizedLocalMobile ? { mobileNumber: `${countryCode}${normalizedLocalMobile}` } : {}),
+      };
       const data = await apiRequest('/api/auth/register', {
         method: 'POST',
-        body: { username, password },
+        body: payload,
       });
       
       login(data.user, data.token);
@@ -69,6 +79,25 @@ const Signup = ({ onSwitch }) => {
             required
             placeholder="Create a strong password"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Mobile Number (optional)</label>
+          <div className="flex items-center gap-2">
+            <CountryCodePicker
+              value={countryCode}
+              onChange={(nextCode) => setCountryCode(nextCode)}
+              helperText="Optional: add mobile now for faster OTP login later."
+            />
+            <input
+              type="tel"
+              inputMode="numeric"
+              className="w-full bg-slate-900/50 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
+              value={normalizedLocalMobile}
+              onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 12))}
+              placeholder="Enter mobile number"
+            />
+          </div>
         </div>
         
         <button 
