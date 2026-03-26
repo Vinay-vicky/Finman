@@ -628,24 +628,22 @@ const NextLevel = () => {
         ))}
       </div>
 
-      <div className="fixed bottom-4 right-4 z-[60] w-[360px] max-w-[calc(100vw-2rem)] glass-panel p-3 border border-slate-700/70">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-semibold text-slate-200 tracking-wide">Undo History</h4>
-          <button className="text-[10px] text-slate-400 hover:text-white" onClick={() => setUndoHistory([])}>Clear</button>
-        </div>
-        {undoHistory.length === 0 ? (
-          <p className="text-xs text-slate-500">No recent undoable actions.</p>
-        ) : (
-          <ul className="max-h-40 overflow-auto space-y-1">
+      {undoHistory.length > 0 && (
+        <div className="fixed bottom-2 left-2 right-2 md:bottom-4 md:right-4 md:left-auto z-[60] md:w-[360px] max-w-[calc(100vw-1rem)] glass-panel p-3 border border-slate-700/70">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-semibold text-slate-200 tracking-wide">Undo History</h4>
+            <button className="text-[10px] text-slate-400 hover:text-white" onClick={() => setUndoHistory([])}>Clear</button>
+          </div>
+          <ul className="max-h-32 md:max-h-40 overflow-auto space-y-1">
             {undoHistory.map((h) => (
-              <li key={h.id} className="text-[11px] text-slate-300 bg-slate-900/60 rounded px-2 py-1 border border-slate-800 flex items-center justify-between">
-                <span>{h.action} ({h.count})</span>
-                <span className={`capitalize ${h.status === 'failed' ? 'text-red-300' : h.status === 'undone' ? 'text-amber-300' : 'text-emerald-300'}`}>{h.status}</span>
+              <li key={h.id} className="text-[11px] text-slate-300 bg-slate-900/60 rounded px-2 py-1 border border-slate-800 flex items-center justify-between gap-2">
+                <span className="truncate">{h.action} ({h.count})</span>
+                <span className={`capitalize shrink-0 ${h.status === 'failed' ? 'text-red-300' : h.status === 'undone' ? 'text-amber-300' : 'text-emerald-300'}`}>{h.status}</span>
               </li>
             ))}
           </ul>
-        )}
-      </div>
+        </div>
+      )}
 
       <header className="glass-panel p-6 rounded-2xl border border-emerald-500/20">
         <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">Next-Level Finance Suite</h2>
@@ -709,20 +707,22 @@ const NextLevel = () => {
         </ActionCard>
 
         <ActionCard title="3) Anomaly Detection" subtitle="Detect unusually large expenses" icon={AlertTriangle}>
-          <button className="btn-primary" onClick={() => callApi('anomalies', '/api/next-level/transactions/anomalies')}>
-            {loadingKey === 'anomalies' ? 'Loading…' : 'Find Anomalies'}
-          </button>
-          <button
-            className="btn-secondary ml-2"
-            onClick={() => exportRows('anomalies', results.anomalies?.anomalies || [], [
-              { label: 'Title', value: (r) => r.title },
-              { label: 'Category', value: (r) => r.category },
-              { label: 'Amount', value: (r) => r.amount },
-              { label: 'Date', value: (r) => r.date },
-            ])}
-          >
-            <Download size={14} className="inline mr-1" /> CSV
-          </button>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button className="btn-primary" onClick={() => callApi('anomalies', '/api/next-level/transactions/anomalies')}>
+              {loadingKey === 'anomalies' ? 'Loading…' : 'Find Anomalies'}
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => exportRows('anomalies', results.anomalies?.anomalies || [], [
+                { label: 'Title', value: (r) => r.title },
+                { label: 'Category', value: (r) => r.category },
+                { label: 'Amount', value: (r) => r.amount },
+                { label: 'Date', value: (r) => r.date },
+              ])}
+            >
+              <Download size={14} className="inline mr-1" /> CSV
+            </button>
+          </div>
           {Array.isArray(results.anomalies?.anomalies) ? (
             <>
               <p className="mt-3 text-xs text-slate-300">Threshold: <span className="text-amber-300">{money(results.anomalies.threshold)}</span></p>
@@ -754,7 +754,7 @@ const NextLevel = () => {
             </select>
             <input className="input-glass" placeholder="Value" type="number" value={netWorthForm.value} onChange={(e) => setNetWorthForm((p) => ({ ...p, value: e.target.value }))} />
           </div>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
             <button
               className="btn-primary"
               onClick={async () => {
@@ -857,18 +857,20 @@ const NextLevel = () => {
         </ActionCard>
 
         <ActionCard title="5) Subscription Intelligence" subtitle="Detect repeat spend candidates" icon={Repeat}>
-          <button className="btn-primary" onClick={() => callApi('subscriptions', '/api/next-level/subscriptions/insights')}>
-            {loadingKey === 'subscriptions' ? 'Loading…' : 'Analyze Subscriptions'}
-          </button>
-          <button
-            className="btn-secondary ml-2"
-            onClick={() => exportRows('subscriptions', results.subscriptions?.candidates || [], [
-              { label: 'Title', value: (r) => r.title },
-              { label: 'Category', value: (r) => r.category },
-              { label: 'Occurrences', value: (r) => r.occurrences },
-              { label: 'Avg Amount', value: (r) => r.avgAmount },
-            ])}
-          ><Download size={14} className="inline mr-1" /> CSV</button>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button className="btn-primary" onClick={() => callApi('subscriptions', '/api/next-level/subscriptions/insights')}>
+              {loadingKey === 'subscriptions' ? 'Loading…' : 'Analyze Subscriptions'}
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => exportRows('subscriptions', results.subscriptions?.candidates || [], [
+                { label: 'Title', value: (r) => r.title },
+                { label: 'Category', value: (r) => r.category },
+                { label: 'Occurrences', value: (r) => r.occurrences },
+                { label: 'Avg Amount', value: (r) => r.avgAmount },
+              ])}
+            ><Download size={14} className="inline mr-1" /> CSV</button>
+          </div>
           {Array.isArray(results.subscriptions?.candidates) ? (
             <div className="mt-3 overflow-auto rounded-xl border border-slate-700">
               <table className="w-full text-xs text-slate-300">
@@ -911,7 +913,7 @@ const NextLevel = () => {
           <div className="grid grid-cols-1 md:grid-cols-1 gap-2 mt-2">
             <input className="input-glass" placeholder="Action value" value={ruleForm.action_value} onChange={(e) => setRuleForm((p) => ({ ...p, action_value: e.target.value }))} />
           </div>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
             <button className="btn-primary" onClick={async () => {
               const hasListContext = Array.isArray(results.rules?.items);
               if (!hasListContext) {
@@ -1011,7 +1013,7 @@ const NextLevel = () => {
             <input className="input-glass" placeholder="Due day" type="number" min={1} max={31} value={billForm.due_day} onChange={(e) => setBillForm((p) => ({ ...p, due_day: Number(e.target.value || 1) }))} />
             <input className="input-glass" placeholder="Category" value={billForm.category} onChange={(e) => setBillForm((p) => ({ ...p, category: e.target.value }))} />
           </div>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
             <button className="btn-primary" onClick={async () => {
               const hasListContext = Array.isArray(results.bills?.items);
               if (!hasListContext) {
@@ -1135,9 +1137,9 @@ const NextLevel = () => {
               Join via Code
             </button>
           </div>
-          <div className="mt-2">
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button className="btn-secondary" disabled={Boolean(activeLoads.households)} onClick={() => loadHouseholds(householdsQuery)}>{activeLoads.households ? 'Loading…' : 'List My Households'}</button>
-            <button className="btn-secondary ml-2" onClick={() => exportRows('households', results.households?.items || [], [
+            <button className="btn-secondary" onClick={() => exportRows('households', results.households?.items || [], [
               { label: 'Name', value: (r) => r.name },
               { label: 'Invite Code', value: (r) => r.invite_code },
               { label: 'Created At', value: (r) => r.createdAt },
@@ -1175,12 +1177,14 @@ const NextLevel = () => {
         </ActionCard>
 
         <ActionCard title="9) Tax Workspace" subtitle="Category-based annual tax summary" icon={Receipt}>
-          <button className="btn-primary" onClick={() => callApi('tax', `/api/next-level/tax/summary?year=${new Date().getFullYear()}`)}>Generate Tax Summary</button>
-          <button className="btn-secondary ml-2" onClick={() => exportRows('tax-summary', results.tax?.categories || [], [
-            { label: 'Category', value: (r) => r.category },
-            { label: 'Total', value: (r) => r.total },
-            { label: 'Likely Deductible', value: (r) => (r.likelyDeductible ? 'Yes' : 'No') },
-          ])}><Download size={14} className="inline mr-1" /> CSV</button>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button className="btn-primary" onClick={() => callApi('tax', `/api/next-level/tax/summary?year=${new Date().getFullYear()}`)}>Generate Tax Summary</button>
+            <button className="btn-secondary" onClick={() => exportRows('tax-summary', results.tax?.categories || [], [
+              { label: 'Category', value: (r) => r.category },
+              { label: 'Total', value: (r) => r.total },
+              { label: 'Likely Deductible', value: (r) => (r.likelyDeductible ? 'Yes' : 'No') },
+            ])}><Download size={14} className="inline mr-1" /> CSV</button>
+          </div>
           {Array.isArray(results.tax?.categories) ? (
             <div className="mt-3 overflow-auto rounded-xl border border-slate-700">
               <table className="w-full text-xs text-slate-300">
@@ -1197,7 +1201,7 @@ const NextLevel = () => {
         </ActionCard>
 
         <ActionCard title="Activity Timeline" subtitle="Server-backed audit trail across sessions/devices" icon={CalendarClock} status={getStatus('activity', 'activity-integrity')}>
-          <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
             <select
               className="input-glass"
               value={activityQuery.action}
@@ -1332,13 +1336,15 @@ const NextLevel = () => {
         </ActionCard>
 
         <ActionCard title="10) Smart Goal Optimizer" subtitle="Monthly contribution recommendations" icon={Target}>
-          <button className="btn-primary" onClick={() => callApi('goals', '/api/next-level/goals/optimizer')}>Optimize Goals</button>
-          <button className="btn-secondary ml-2" onClick={() => exportRows('goal-optimizer', results.goals?.recommendations || [], [
-            { label: 'Name', value: (r) => r.name },
-            { label: 'Remaining', value: (r) => r.remaining },
-            { label: 'Months Left', value: (r) => r.monthsLeft },
-            { label: 'Suggested Monthly Contribution', value: (r) => r.suggestedMonthlyContribution },
-          ])}><Download size={14} className="inline mr-1" /> CSV</button>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button className="btn-primary" onClick={() => callApi('goals', '/api/next-level/goals/optimizer')}>Optimize Goals</button>
+            <button className="btn-secondary" onClick={() => exportRows('goal-optimizer', results.goals?.recommendations || [], [
+              { label: 'Name', value: (r) => r.name },
+              { label: 'Remaining', value: (r) => r.remaining },
+              { label: 'Months Left', value: (r) => r.monthsLeft },
+              { label: 'Suggested Monthly Contribution', value: (r) => r.suggestedMonthlyContribution },
+            ])}><Download size={14} className="inline mr-1" /> CSV</button>
+          </div>
           {Array.isArray(results.goals?.recommendations) ? (
             <div className="mt-3 overflow-auto rounded-xl border border-slate-700">
               <table className="w-full text-xs text-slate-300">
