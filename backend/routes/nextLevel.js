@@ -87,6 +87,10 @@ const householdJoinSchema = z.object({
 	inviteCode: z.string().trim().min(4).max(32),
 });
 
+const householdMemberRoleSchema = z.object({
+	role: z.enum(['editor', 'viewer']),
+});
+
 // 12-feature pack endpoints
 router.get('/copilot/summary', controller.getCopilotSummary);
 router.get('/cashflow/forecast', validate(forecastQuerySchema, 'query'), controller.getCashflowForecast);
@@ -110,6 +114,12 @@ router.delete('/bills/:id', validate(idParamSchema, 'params'), controller.delete
 router.get('/bills/upcoming', validate(paginationQuerySchema, 'query'), controller.getUpcomingBills);
 
 router.get('/households', validate(paginationQuerySchema, 'query'), controller.listHouseholds);
+router.get('/households/:id', validate(idParamSchema, 'params'), controller.getHousehold);
+router.get('/households/:id/members', validate(idParamSchema, 'params'), controller.listHouseholdMembers);
+router.patch('/households/:id/members/:memberId', validate(z.object({
+	id: z.coerce.number().int().positive(),
+	memberId: z.coerce.number().int().positive(),
+}), 'params'), validate(householdMemberRoleSchema), controller.updateHouseholdMemberRole);
 router.post('/households', validate(householdCreateSchema), controller.createHousehold);
 router.post('/households/join', validate(householdJoinSchema), controller.joinHousehold);
 

@@ -538,33 +538,151 @@ const listHouseholds = async (userId, query = {}) => {
 
   const result = await db.execute({
     sql: `
-      SELECT h.*
+      SELECT
+        h.*,
+        CASE
+          WHEN h.owner_user_id = ? THEN 'owner'
+          ELSE COALESCE((SELECT hm.role FROM household_members hm WHERE hm.household_id = h.id AND hm.user_id = ? LIMIT 1), 'viewer')
+        END AS yourRole,
+        (SELECT COUNT(*) FROM household_members hm2 WHERE hm2.household_id = h.id) AS memberCount
       FROM households h
-      LEFT JOIN household_members hm ON hm.household_id = h.id
-      WHERE (h.owner_user_id = ? OR hm.user_id = ?)
+      WHERE (h.owner_user_id = ? OR EXISTS (
+        SELECT 1 FROM household_members hm
+        WHERE hm.household_id = h.id AND hm.user_id = ?
+      ))
         AND (? = '' OR LOWER(h.name) LIKE ?)
-      GROUP BY h.id
       ORDER BY h.id DESC
       LIMIT ? OFFSET ?
     `,
-    args: [userId, userId, search, `%${search}%`, limit, offset],
+    args: [userId, userId, userId, userId, search, `%${search}%`, limit, offset],
   });
   const count = await db.execute({
     sql: `
       SELECT COUNT(*) as total
-      FROM (
-        SELECT h.id
-        FROM households h
-        LEFT JOIN household_members hm ON hm.household_id = h.id
-        WHERE (h.owner_user_id = ? OR hm.user_id = ?)
-          AND (? = '' OR LOWER(h.name) LIKE ?)
-        GROUP BY h.id
-      ) t
+      FROM households h
+      WHERE (h.owner_user_id = ? OR EXISTS (
+        SELECT 1 FROM household_members hm
+        WHERE hm.household_id = h.id AND hm.user_id = ?
+      ))
+        AND (? = '' OR LOWER(h.name) LIKE ?)
     `,
     args: [userId, userId, search, `%${search}%`],
   });
 
   return toPaginated(result.rows, Number(count.rows[0]?.total || 0), page, limit);
+};
+
+const getHouseholdById = async (userId, householdId) => {
+  const result = await db.execute({
+    sql: `
+      SELECT
+        h.*,
+        CASE
+          WHEN h.owner_user_id = ? THEN 'owner'
+          ELSE COALESCE((SELECT hm.role FROM household_members hm WHERE hm.household_id = h.id AND hm.user_id = ? LIMIT 1), 'viewer')
+        END AS yourRole,
+        (SELECT COUNT(*) FROM household_members hm2 WHERE hm2.household_id = h.id) AS memberCount
+      FROM households h
+      WHERE h.id = ?
+        AND (h.owner_user_id = ? OR EXISTS (
+          SELECT 1 FROM household_members hm
+          WHERE hm.household_id = h.id AND hm.user_id = ?
+        ))
+      LIMIT 1
+    `,
+    args: [userId, userId, householdId, userId, userId],
+  });
+
+  return result.rows[0] || null;
+};
+
+const listHouseholdMembers = async (userId, householdId) => {
+  const household = await getHouseholdById(userId, householdId);
+  if (!household) {
+    throw new Error('Household not found or inaccessible.');
+  }
+
+  const members = await db.execute({
+    sql: `
+      SELECT
+        hm.id,
+        hm.household_id AS householdId,
+        hm.user_id AS userId,
+        hm.role,
+        hm.createdAt,
+        u.username,
+        CASE WHEN h.owner_user_id = hm.user_id THEN 1 ELSE 0 END AS isOwner
+      FROM household_members hm
+      INNER JOIN users u ON u.id = hm.user_id
+      INNER JOIN households h ON h.id = hm.household_id
+      WHERE hm.household_id = ?
+      ORDER BY isOwner DESC, hm.createdAt ASC
+    `,
+    args: [householdId],
+  });
+
+  return {
+    household: {
+      id: household.id,
+      name: household.name,
+      invite_code: household.invite_code,
+      yourRole: household.yourRole,
+      memberCount: household.memberCount,
+    },
+    members: members.rows,
+  };
+};
+
+const updateHouseholdMemberRole = async (userId, householdId, memberUserId, role) => {
+  const ownerCheck = await db.execute({
+    sql: 'SELECT owner_user_id AS ownerUserId FROM households WHERE id = ? LIMIT 1',
+    args: [householdId],
+  });
+  const household = ownerCheck.rows[0];
+  if (!household) {
+    throw new Error('Household not found.');
+  }
+
+  if (Number(household.ownerUserId) !== Number(userId)) {
+    throw new Error('Only household owner can manage member roles.');
+  }
+
+  if (Number(memberUserId) === Number(household.ownerUserId)) {
+    throw new Error('Owner role cannot be changed.');
+  }
+
+  const update = await db.execute({
+    sql: 'UPDATE household_members SET role = ? WHERE household_id = ? AND user_id = ?',
+    args: [role, householdId, memberUserId],
+  });
+
+  if (Number(update.rowsAffected || 0) === 0) {
+    throw new Error('Household member not found.');
+  }
+
+  const updated = await db.execute({
+    sql: `
+      SELECT
+        hm.id,
+        hm.household_id AS householdId,
+        hm.user_id AS userId,
+        hm.role,
+        hm.createdAt,
+        u.username
+      FROM household_members hm
+      INNER JOIN users u ON u.id = hm.user_id
+      WHERE hm.household_id = ? AND hm.user_id = ?
+      LIMIT 1
+    `,
+    args: [householdId, memberUserId],
+  });
+
+  await logActivity(userId, 'next-level', 'update', 'household', householdId, {
+    memberUserId,
+    newRole: role,
+  });
+
+  return updated.rows[0];
 };
 
 const createHousehold = async (userId, payload) => {
@@ -811,6 +929,9 @@ module.exports = {
   deleteBill,
   getUpcomingBills,
   listHouseholds,
+  getHouseholdById,
+  listHouseholdMembers,
+  updateHouseholdMemberRole,
   createHousehold,
   joinHouseholdByInvite,
   listActivityTimeline,

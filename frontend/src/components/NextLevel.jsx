@@ -101,6 +101,9 @@ const NextLevel = () => {
   const [billForm, setBillForm] = useState({ name: 'Internet', amount: 49.99, due_day: 10, category: 'Utilities' });
   const [householdName, setHouseholdName] = useState('Family HQ');
   const [inviteCode, setInviteCode] = useState('');
+  const [activeHousehold, setActiveHousehold] = useState(null);
+  const [householdWorkspace, setHouseholdWorkspace] = useState(null);
+  const [memberRoleDrafts, setMemberRoleDrafts] = useState({});
   const [netWorthQuery, setNetWorthQuery] = useState({ page: 1, limit: 5, search: '', kind: '' });
   const [rulesQuery, setRulesQuery] = useState({ page: 1, limit: 5, search: '' });
   const [billsQuery, setBillsQuery] = useState({ page: 1, limit: 5, search: '' });
@@ -204,6 +207,41 @@ const NextLevel = () => {
   const loadRules = (query = rulesQuery) => callApi('rules', `/api/next-level/rules${qs(query)}`, {}, { error: false });
   const loadBills = (query = billsQuery) => callApi('bills', `/api/next-level/bills${qs(query)}`, {}, { error: false });
   const loadHouseholds = (query = householdsQuery) => callApi('households', `/api/next-level/households${qs(query)}`, {}, { error: false });
+  const openHousehold = async (id) => {
+    const data = await callApi('household-access', `/api/next-level/households/${id}`, {}, { error: 'Unable to open household.' });
+    if (data) {
+      setActiveHousehold(data);
+      const workspace = await callApi('household-members', `/api/next-level/households/${id}/members`, {}, { error: false });
+      if (workspace) {
+        setHouseholdWorkspace(workspace);
+        const drafts = {};
+        (workspace.members || []).forEach((m) => {
+          drafts[m.userId] = m.role;
+        });
+        setMemberRoleDrafts(drafts);
+      }
+      pushToast('success', `Opened household: ${data.name}`);
+    }
+  };
+
+  const updateHouseholdMemberRole = async (householdId, memberUserId) => {
+    const role = memberRoleDrafts[memberUserId];
+    if (!role) return;
+
+    const updated = await callApi(
+      'household-member-role',
+      `/api/next-level/households/${householdId}/members/${memberUserId}`,
+      { method: 'PATCH', body: { role } },
+      { success: 'Member role updated.' }
+    );
+
+    if (updated) {
+      const workspace = await callApi('household-members', `/api/next-level/households/${householdId}/members`, {}, { error: false });
+      if (workspace) {
+        setHouseholdWorkspace(workspace);
+      }
+    }
+  };
   const loadActivityTimeline = (query = activityQuery) => callApi('activity', `/api/next-level/activity${qs(query)}`, {}, { error: false });
   const loadActivityIntegrity = async () => {
     const data = await apiRequest('/api/next-level/activity/integrity', { token });
@@ -1096,7 +1134,7 @@ const NextLevel = () => {
           <ErrorState error={results.bills?.error || results['bill-save']?.error || results['bills-upcoming']?.error} />
         </ActionCard>
 
-        <ActionCard title="8) Family Spaces" subtitle="Shared finance spaces via invite code" icon={Users} status={getStatus('households', 'household-create', 'household-join')}>
+        <ActionCard title="8) Family Spaces" subtitle="Shared finance spaces via invite code" icon={Users} status={getStatus('households', 'household-create', 'household-join', 'household-access', 'household-members', 'household-member-role')}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <input className="input-glass" placeholder="New household name" value={householdName} onChange={(e) => setHouseholdName(e.target.value)} />
             <button
@@ -1111,6 +1149,8 @@ const NextLevel = () => {
                 if (created) {
                   await loadHouseholds({ ...householdsQuery, page: 1 });
                   setHouseholdName('Family HQ');
+                  setHouseholdsQuery((p) => ({ ...p, page: 1 }));
+                  openHousehold(created.id);
                 }
               }}
             >
@@ -1131,6 +1171,8 @@ const NextLevel = () => {
                 if (joined) {
                   await loadHouseholds({ ...householdsQuery, page: 1 });
                   setInviteCode('');
+                  setHouseholdsQuery((p) => ({ ...p, page: 1 }));
+                  openHousehold(joined.id);
                 }
               }}
             >
@@ -1142,6 +1184,8 @@ const NextLevel = () => {
             <button className="btn-secondary" onClick={() => exportRows('households', results.households?.items || [], [
               { label: 'Name', value: (r) => r.name },
               { label: 'Invite Code', value: (r) => r.invite_code },
+              { label: 'Role', value: (r) => r.yourRole },
+              { label: 'Members', value: (r) => r.memberCount },
               { label: 'Created At', value: (r) => r.createdAt },
             ])}><Download size={14} className="inline mr-1" /> CSV</button>
           </div>
@@ -1153,8 +1197,14 @@ const NextLevel = () => {
               <ul className="mt-2 space-y-2 text-xs">
                 {results.households.items.map((h) => (
                   <li key={h.id} className="p-2 rounded-lg bg-slate-900/50 border border-slate-700 text-slate-200">
-                    <div className="font-semibold">{h.name}</div>
-                    <div className="text-slate-400">Invite: {h.invite_code}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-semibold">{h.name}</div>
+                        <div className="text-slate-400">Invite: {h.invite_code}</div>
+                        <div className="text-slate-500 mt-0.5">Role: {h.yourRole || 'viewer'} • Members: {h.memberCount ?? '-'}</div>
+                      </div>
+                      <button className="btn-secondary !w-auto !px-2 !py-1 text-[11px]" onClick={() => openHousehold(h.id)}>Open</button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -1173,7 +1223,75 @@ const NextLevel = () => {
               />
             </>
           ) : <EmptyState text="Create, join, or list households to see shared spaces." />}
-          <ErrorState error={results.households?.error || results['household-create']?.error || results['household-join']?.error} />
+          {activeHousehold && (
+            <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-100">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold">Active Household: {activeHousehold.name}</p>
+                <button className="text-slate-300 hover:text-white" onClick={() => {
+                  setActiveHousehold(null);
+                  setHouseholdWorkspace(null);
+                }}>Close</button>
+              </div>
+              <p className="mt-1 text-emerald-200/90">Role: {activeHousehold.yourRole || 'viewer'} • Members: {activeHousehold.memberCount ?? '-'}</p>
+              <p className="mt-1 text-emerald-200/90">Invite code: {activeHousehold.invite_code}</p>
+              <p className="mt-1 text-emerald-200/90">Created: {activeHousehold.createdAt ? new Date(activeHousehold.createdAt).toLocaleString() : '—'}</p>
+
+              {householdWorkspace?.members?.length > 0 && (
+                <div className="mt-3 rounded-lg border border-emerald-500/20 overflow-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-900/50 text-emerald-200">
+                      <tr>
+                        <th className="p-2 text-left">Member</th>
+                        <th className="p-2 text-left">Role</th>
+                        <th className="p-2 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {householdWorkspace.members.map((m) => {
+                        const canEdit = (activeHousehold?.yourRole === 'owner') && Number(m.isOwner) !== 1;
+                        return (
+                          <tr key={`${m.householdId}-${m.userId}`} className="border-t border-emerald-500/10">
+                            <td className="p-2">
+                              <div className="font-medium text-emerald-100">{m.username}</div>
+                              {Number(m.isOwner) === 1 && <div className="text-[10px] text-emerald-300">Owner</div>}
+                            </td>
+                            <td className="p-2">
+                              {canEdit ? (
+                                <select
+                                  className="input-glass !py-1"
+                                  value={memberRoleDrafts[m.userId] || m.role}
+                                  onChange={(e) => setMemberRoleDrafts((prev) => ({ ...prev, [m.userId]: e.target.value }))}
+                                >
+                                  <option value="viewer">viewer</option>
+                                  <option value="editor">editor</option>
+                                </select>
+                              ) : (
+                                <span className="capitalize">{m.role}</span>
+                              )}
+                            </td>
+                            <td className="p-2">
+                              {canEdit ? (
+                                <button
+                                  className="btn-secondary !w-auto !py-1 !px-2 text-[11px]"
+                                  disabled={Boolean(activeLoads['household-member-role'])}
+                                  onClick={() => updateHouseholdMemberRole(activeHousehold.id, m.userId)}
+                                >
+                                  {activeLoads['household-member-role'] ? 'Saving…' : 'Save'}
+                                </button>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+          <ErrorState error={results.households?.error || results['household-create']?.error || results['household-join']?.error || results['household-access']?.error || results['household-members']?.error || results['household-member-role']?.error} />
         </ActionCard>
 
         <ActionCard title="9) Tax Workspace" subtitle="Category-based annual tax summary" icon={Receipt}>

@@ -4,6 +4,7 @@ const { SECRET_KEY } = require('../middleware/authMiddleware');
 const { OAuth2Client } = require('google-auth-library');
 const AppError = require('../utils/appError');
 const crypto = require('crypto');
+const otpDeliveryService = require('../services/otpDeliveryService');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -206,10 +207,90 @@ const logoutAll = async (req, res, next) => {
   }
 };
 
+const requestMobileOtp = async (req, res, next) => {
+  try {
+    const mobileNumber = authService.normalizeMobileNumber(req.body?.mobileNumber);
+    if (!mobileNumber) {
+      return next(new AppError(400, 'Valid mobile number is required.'));
+    }
+
+    const otpInfo = await authService.createMobileOtpCode(mobileNumber, 'login', {
+      userAgent: req.get('user-agent') || null,
+      ipAddress: req.ip || req.headers['x-forwarded-for'] || null,
+    });
+
+    await otpDeliveryService.sendOtp({
+      mobileNumber,
+      otp: otpInfo.otp,
+      ttlMinutes: otpInfo.ttlMinutes,
+    });
+
+    const response = {
+      success: true,
+      message: 'If the mobile number is valid, an OTP has been sent.',
+      expiresAt: otpInfo.expiresAt,
+    };
+
+    if (otpDeliveryService.shouldExposeDevOtp()) {
+      response.devOtp = otpInfo.otp;
+    }
+
+    return res.json(response);
+  } catch (err) {
+    if (err.message === 'Too many OTP requests. Please try again later.') {
+      return next(new AppError(429, err.message));
+    }
+    if (String(err.message || '').toLowerCase().includes('twilio')) {
+      return next(new AppError(503, 'OTP provider is currently unavailable. Please try again shortly.'));
+    }
+    return next(err);
+  }
+};
+
+const verifyMobileOtp = async (req, res, next) => {
+  try {
+    const mobileNumber = authService.normalizeMobileNumber(req.body?.mobileNumber);
+    const otp = String(req.body?.otp || '').trim();
+    if (!mobileNumber || !otp) {
+      return next(new AppError(400, 'Mobile number and OTP are required.'));
+    }
+
+    await authService.verifyMobileOtpCode(mobileNumber, otp, 'login');
+
+    let user = await authService.getUserByMobileNumber(mobileNumber);
+    if (!user) {
+      user = await authService.createUserWithMobileNumber(mobileNumber);
+    }
+
+    const session = await issueSession(req, res, user);
+    return res.json(session);
+  } catch (err) {
+    if (err.message === 'OTP is invalid or expired.' || err.message === 'OTP attempts exceeded. Please request a new OTP.') {
+      return next(new AppError(400, err.message));
+    }
+    return next(err);
+  }
+};
+
+const getMobileOtpProviderHealth = async (req, res, next) => {
+  try {
+    const health = otpDeliveryService.getProviderHealth();
+    return res.json({
+      success: true,
+      health,
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   register,
   login,
   googleLogin,
+  requestMobileOtp,
+  verifyMobileOtp,
+  getMobileOtpProviderHealth,
   refresh,
   logout,
   listSessions,

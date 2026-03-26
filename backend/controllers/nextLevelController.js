@@ -161,6 +161,56 @@ const listHouseholds = async (req, res, next) => {
   }
 };
 
+const getHousehold = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return next(new AppError(400, 'Invalid household id.'));
+    const data = await nextLevelService.getHouseholdById(req.user.id, id);
+    if (!data) return next(new AppError(404, 'Household not found or inaccessible.'));
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const listHouseholdMembers = async (req, res, next) => {
+  try {
+    const householdId = Number(req.params.id);
+    if (!householdId) return next(new AppError(400, 'Invalid household id.'));
+    const data = await nextLevelService.listHouseholdMembers(req.user.id, householdId);
+    res.json(data);
+  } catch (err) {
+    if (err.message === 'Household not found or inaccessible.') {
+      return next(new AppError(404, err.message));
+    }
+    return next(err);
+  }
+};
+
+const updateHouseholdMemberRole = async (req, res, next) => {
+  try {
+    const householdId = Number(req.params.id);
+    const memberUserId = Number(req.params.memberId);
+    const role = req.body?.role;
+    if (!householdId || !memberUserId || !role) {
+      return next(new AppError(400, 'Invalid member role update payload.'));
+    }
+
+    const data = await nextLevelService.updateHouseholdMemberRole(req.user.id, householdId, memberUserId, role);
+    res.json(data);
+  } catch (err) {
+    if (
+      err.message === 'Household not found.'
+      || err.message === 'Only household owner can manage member roles.'
+      || err.message === 'Owner role cannot be changed.'
+      || err.message === 'Household member not found.'
+    ) {
+      return next(new AppError(400, err.message));
+    }
+    return next(err);
+  }
+};
+
 const createHousehold = async (req, res, next) => {
   try {
     const data = await nextLevelService.createHousehold(req.user.id, req.body || {});
@@ -258,6 +308,9 @@ module.exports = {
   deleteBill,
   getUpcomingBills,
   listHouseholds,
+  getHousehold,
+  listHouseholdMembers,
+  updateHouseholdMemberRole,
   createHousehold,
   joinHousehold,
   getTaxSummary,

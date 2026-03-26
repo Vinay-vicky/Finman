@@ -18,6 +18,7 @@ const connectDB = async () => {
       `CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
+        mobile_number TEXT UNIQUE,
         password TEXT NOT NULL,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
@@ -162,6 +163,19 @@ const connectDB = async () => {
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )`,
+      `CREATE TABLE IF NOT EXISTS mobile_otp_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mobile_number TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        otp_hash TEXT NOT NULL,
+        attempts INTEGER DEFAULT 0,
+        max_attempts INTEGER DEFAULT 5,
+        expires_at DATETIME NOT NULL,
+        consumed_at DATETIME,
+        ip_address TEXT,
+        user_agent TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
     ], 'write');
 
     // Lightweight migrations for existing local/hosted DBs.
@@ -198,6 +212,10 @@ const connectDB = async () => {
       `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_entry_hash ON activity_logs(user_id, entry_hash)`,
       `ALTER TABLE activity_logs ADD COLUMN prev_hash TEXT`,
       `ALTER TABLE activity_logs ADD COLUMN entry_hash TEXT`,
+      `ALTER TABLE users ADD COLUMN mobile_number TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mobile_number ON users(mobile_number)`,
+      `CREATE INDEX IF NOT EXISTS idx_mobile_otp_mobile_purpose_created ON mobile_otp_codes(mobile_number, purpose, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_mobile_otp_expires_consumed ON mobile_otp_codes(expires_at, consumed_at)`,
     ];
 
     for (const sql of migrationStatements) {
