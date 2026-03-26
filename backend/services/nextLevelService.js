@@ -19,10 +19,21 @@ const toPaginated = (items, total, page, limit) => ({
 
 const logActivity = async (userId, area, action, entityType, entityId, payload = {}) => {
   try {
+    const payloadJson = JSON.stringify(payload || {});
+    const previous = await db.execute({
+      sql: 'SELECT entry_hash AS entryHash FROM activity_logs WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+      args: [userId],
+    });
+    const prevHash = previous.rows[0]?.entryHash || '';
+    const entryHash = crypto
+      .createHash('sha256')
+      .update(`${userId}|${area}|${action}|${entityType || ''}|${entityId || ''}|${payloadJson}|${prevHash}`)
+      .digest('hex');
+
     await db.execute({
-      sql: `INSERT INTO activity_logs (user_id, area, action, entity_type, entity_id, payload_json)
-            VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [userId, area, action, entityType || null, entityId || null, JSON.stringify(payload || {})],
+      sql: `INSERT INTO activity_logs (user_id, area, action, entity_type, entity_id, payload_json, prev_hash, entry_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [userId, area, action, entityType || null, entityId || null, payloadJson, prevHash || null, entryHash],
     });
   } catch {
     // Logging failures should never block main flow.
@@ -224,15 +235,19 @@ const listNetWorthItems = async (userId, query = {}) => {
 
 const upsertNetWorthItem = async (userId, payload) => {
   if (payload.id) {
+    const before = await db.execute({
+      sql: 'SELECT * FROM net_worth_items WHERE id = ? AND user_id = ?',
+      args: [payload.id, userId],
+    });
+
     await db.execute({
       sql: 'UPDATE net_worth_items SET name = ?, kind = ?, value = ?, category = ?, as_of = COALESCE(?, as_of) WHERE id = ? AND user_id = ?',
       args: [payload.name, payload.kind, payload.value, payload.category || null, payload.as_of || null, payload.id, userId],
     });
     const result = await db.execute({ sql: 'SELECT * FROM net_worth_items WHERE id = ? AND user_id = ?', args: [payload.id, userId] });
     await logActivity(userId, 'next-level', 'update', 'networth', payload.id, {
-      name: payload.name,
-      kind: payload.kind,
-      value: payload.value,
+      before: before.rows[0] || null,
+      after: result.rows[0] || null,
     });
     return result.rows[0];
   }
@@ -305,6 +320,11 @@ const listRules = async (userId, query = {}) => {
 
 const createRule = async (userId, payload) => {
   if (payload.id) {
+    const before = await db.execute({
+      sql: 'SELECT * FROM automation_rules WHERE id = ? AND user_id = ?',
+      args: [payload.id, userId],
+    });
+
     await db.execute({
       sql: 'UPDATE automation_rules SET name = ?, field = ?, operator = ?, value = ?, action_type = ?, action_value = ?, enabled = ? WHERE id = ? AND user_id = ?',
       args: [
@@ -325,9 +345,8 @@ const createRule = async (userId, payload) => {
       args: [payload.id, userId],
     });
     await logActivity(userId, 'next-level', 'update', 'rule', payload.id, {
-      name: payload.name,
-      field: payload.field,
-      operator: payload.operator,
+      before: before.rows[0] || null,
+      after: updated.rows[0] || null,
     });
     return updated.rows[0];
   }
@@ -422,15 +441,19 @@ const listBills = async (userId, query = {}) => {
 
 const upsertBill = async (userId, payload) => {
   if (payload.id) {
+    const before = await db.execute({
+      sql: 'SELECT * FROM bill_items WHERE id = ? AND user_id = ?',
+      args: [payload.id, userId],
+    });
+
     await db.execute({
       sql: 'UPDATE bill_items SET name = ?, amount = ?, due_day = ?, category = ?, active = ? WHERE id = ? AND user_id = ?',
       args: [payload.name, payload.amount, payload.due_day, payload.category || null, payload.active === false ? 0 : 1, payload.id, userId],
     });
     const updated = await db.execute({ sql: 'SELECT * FROM bill_items WHERE id = ? AND user_id = ?', args: [payload.id, userId] });
     await logActivity(userId, 'next-level', 'update', 'bill', payload.id, {
-      name: payload.name,
-      amount: payload.amount,
-      due_day: payload.due_day,
+      before: before.rows[0] || null,
+      after: updated.rows[0] || null,
     });
     return updated.rows[0];
   }
@@ -572,11 +595,19 @@ const listActivityTimeline = async (userId, query = {}) => {
     where.push('entity_type = ?');
     args.push(String(query.entityType));
   }
+  if (query.from) {
+    where.push('datetime(createdAt) >= datetime(?)');
+    args.push(String(query.from));
+  }
+  if (query.to) {
+    where.push('datetime(createdAt) <= datetime(?)');
+    args.push(String(query.to));
+  }
 
   const whereSql = where.join(' AND ');
   const rows = await db.execute({
     sql: `
-      SELECT id, area, action, entity_type AS entityType, entity_id AS entityId, payload_json AS payloadJson, createdAt
+      SELECT id, area, action, entity_type AS entityType, entity_id AS entityId, payload_json AS payloadJson, prev_hash AS prevHash, entry_hash AS entryHash, createdAt
       FROM activity_logs
       WHERE ${whereSql}
       ORDER BY createdAt DESC, id DESC
@@ -596,6 +627,8 @@ const listActivityTimeline = async (userId, query = {}) => {
     action: row.action,
     entityType: row.entityType,
     entityId: row.entityId,
+    prevHash: row.prevHash,
+    entryHash: row.entryHash,
     createdAt: row.createdAt,
     payload: (() => {
       try {
@@ -607,6 +640,56 @@ const listActivityTimeline = async (userId, query = {}) => {
   }));
 
   return toPaginated(items, Number(count.rows[0]?.total || 0), page, limit);
+};
+
+const exportActivityTimelineCsv = async (userId, query = {}) => {
+  const timeline = await listActivityTimeline(userId, { ...query, page: 1, limit: Math.min(1000, Number(query.limit || 500)) });
+  const header = ['id', 'createdAt', 'action', 'entityType', 'entityId', 'details'];
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = timeline.items.map((i) => [
+    i.id,
+    i.createdAt,
+    i.action,
+    i.entityType,
+    i.entityId,
+    JSON.stringify(i.payload || {}),
+  ].map(esc).join(','));
+
+  return [header.map(esc).join(','), ...lines].join('\n');
+};
+
+const verifyActivityIntegrity = async (userId) => {
+  const rows = await db.execute({
+    sql: `
+      SELECT id, area, action, entity_type AS entityType, entity_id AS entityId, payload_json AS payloadJson, prev_hash AS prevHash, entry_hash AS entryHash
+      FROM activity_logs
+      WHERE user_id = ?
+      ORDER BY id ASC
+    `,
+    args: [userId],
+  });
+
+  let previousHash = '';
+  const broken = [];
+
+  for (const row of rows.rows) {
+    const expected = crypto
+      .createHash('sha256')
+      .update(`${userId}|${row.area}|${row.action}|${row.entityType || ''}|${row.entityId || ''}|${row.payloadJson || '{}'}|${previousHash}`)
+      .digest('hex');
+
+    if ((row.prevHash || '') !== previousHash || (row.entryHash || '') !== expected) {
+      broken.push({ id: row.id, reason: 'hash-mismatch' });
+    }
+    previousHash = row.entryHash || expected;
+  }
+
+  return {
+    valid: broken.length === 0,
+    count: rows.rows.length,
+    broken,
+    latestHash: previousHash || null,
+  };
 };
 
 const getTaxSummary = async (userId, year) => {
@@ -704,6 +787,8 @@ module.exports = {
   createHousehold,
   joinHouseholdByInvite,
   listActivityTimeline,
+  exportActivityTimelineCsv,
+  verifyActivityIntegrity,
   getTaxSummary,
   getGoalOptimizer,
   getExecutiveBrief,

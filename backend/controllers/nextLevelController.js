@@ -220,6 +220,26 @@ const listActivityTimeline = async (req, res, next) => {
   }
 };
 
+const exportActivityTimeline = async (req, res, next) => {
+  try {
+    const csv = await nextLevelService.exportActivityTimelineCsv(req.user.id, req.query || {});
+    res.header('Content-Type', 'text/csv');
+    res.attachment('activity-timeline.csv');
+    res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const verifyActivityIntegrity = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.verifyActivityIntegrity(req.user.id);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getCopilotSummary,
   getCashflowForecast,
@@ -244,4 +264,6 @@ module.exports = {
   getGoalOptimizer,
   getExecutiveBrief,
   listActivityTimeline,
+  exportActivityTimeline,
+  verifyActivityIntegrity,
 };

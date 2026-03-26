@@ -33,6 +33,8 @@ const activityQuerySchema = z.object({
 	limit: z.coerce.number().int().min(1).max(100).optional(),
 	action: z.enum(['create', 'update', 'delete', 'join']).optional(),
 	entityType: z.enum(['networth', 'rule', 'bill', 'household']).optional(),
+	from: z.string().optional(),
+	to: z.string().optional(),
 });
 
 const netWorthUpsertSchema = z.object({
@@ -115,5 +117,7 @@ router.get('/tax/summary', validate(taxQuerySchema, 'query'), controller.getTaxS
 router.get('/goals/optimizer', controller.getGoalOptimizer);
 router.get('/executive/brief', controller.getExecutiveBrief);
 router.get('/activity', validate(activityQuerySchema, 'query'), controller.listActivityTimeline);
+router.get('/activity/export', validate(activityQuerySchema, 'query'), controller.exportActivityTimeline);
+router.get('/activity/integrity', controller.verifyActivityIntegrity);
 
 module.exports = router;

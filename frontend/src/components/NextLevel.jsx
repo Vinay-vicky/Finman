@@ -1,8 +1,8 @@
-import React, { useContext, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, TrendingUp, AlertTriangle, Wallet, Repeat, SlidersHorizontal, CalendarClock, Users, Receipt, Target, Briefcase, BrainCircuit, Pencil, Trash2, Download, X } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { AuthContext } from '../context/AuthContext';
-import { apiRequest } from '../services/api';
+import { apiDownload, apiRequest } from '../services/api';
 
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
@@ -43,6 +43,12 @@ const toCsv = (rows, columns) => {
   return `${header}\n${body}`;
 };
 
+const toInputDate = (date) => {
+  const d = new Date(date);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+};
+
 const Pager = ({ data, onPrev, onNext }) => {
   const page = data?.page || 1;
   const totalPages = data?.totalPages || 1;
@@ -78,7 +84,20 @@ const NextLevel = () => {
   const [rulesQuery, setRulesQuery] = useState({ page: 1, limit: 5, search: '' });
   const [billsQuery, setBillsQuery] = useState({ page: 1, limit: 5, search: '' });
   const [householdsQuery, setHouseholdsQuery] = useState({ page: 1, limit: 5, search: '' });
-  const [activityQuery, setActivityQuery] = useState({ page: 1, limit: 8, action: '', entityType: '' });
+  const [activityQuery, setActivityQuery] = useState(() => {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    return {
+      page: 1,
+      limit: 8,
+      action: '',
+      entityType: '',
+      from: toInputDate(from),
+      to: toInputDate(to),
+    };
+  });
+  const [activityIntegrity, setActivityIntegrity] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [selectedNetWorthIds, setSelectedNetWorthIds] = useState([]);
   const [selectedRuleIds, setSelectedRuleIds] = useState([]);
@@ -163,6 +182,18 @@ const NextLevel = () => {
   const loadBills = (query = billsQuery) => callApi('bills', `/api/next-level/bills${qs(query)}`, {}, { error: false });
   const loadHouseholds = (query = householdsQuery) => callApi('households', `/api/next-level/households${qs(query)}`, {}, { error: false });
   const loadActivityTimeline = (query = activityQuery) => callApi('activity', `/api/next-level/activity${qs(query)}`, {}, { error: false });
+  const loadActivityIntegrity = async () => {
+    const data = await apiRequest('/api/next-level/activity/integrity', { token });
+    setActivityIntegrity(data);
+    return data;
+  };
+
+  useEffect(() => {
+    if (!token) return;
+    loadActivityTimeline(activityQuery);
+    loadActivityIntegrity().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const toggleSelected = (setter, current, id) => {
     setter(current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
@@ -1063,7 +1094,7 @@ const NextLevel = () => {
         </ActionCard>
 
         <ActionCard title="Activity Timeline" subtitle="Server-backed audit trail across sessions/devices" icon={CalendarClock}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
             <select
               className="input-glass"
               value={activityQuery.action}
@@ -1086,10 +1117,63 @@ const NextLevel = () => {
               <option value="bill">bill</option>
               <option value="household">household</option>
             </select>
+            <input
+              type="date"
+              className="input-glass"
+              value={activityQuery.from || ''}
+              onChange={(e) => setActivityQuery((p) => ({ ...p, from: e.target.value, page: 1 }))}
+            />
+            <input
+              type="date"
+              className="input-glass"
+              value={activityQuery.to || ''}
+              onChange={(e) => setActivityQuery((p) => ({ ...p, to: e.target.value, page: 1 }))}
+            />
             <button className="btn-primary" onClick={() => loadActivityTimeline(activityQuery)}>
               Load Timeline
             </button>
+            <button
+              className="btn-secondary"
+              onClick={() => apiDownload(`/api/next-level/activity/export${qs(activityQuery)}`, {
+                token,
+                filename: `activity-timeline-${new Date().toISOString().slice(0, 10)}.csv`,
+              })}
+            >
+              <Download size={14} className="inline mr-1" /> CSV
+            </button>
+            <button className="btn-secondary" onClick={async () => {
+              const info = await loadActivityIntegrity();
+              pushToast(info.valid ? 'success' : 'error', info.valid ? 'Activity chain integrity verified.' : 'Integrity check failed.');
+            }}>
+              Verify Integrity
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                const to = new Date();
+                const from = new Date();
+                from.setDate(from.getDate() - 30);
+                const resetQuery = {
+                  page: 1,
+                  limit: 8,
+                  action: '',
+                  entityType: '',
+                  from: toInputDate(from),
+                  to: toInputDate(to),
+                };
+                setActivityQuery(resetQuery);
+                loadActivityTimeline(resetQuery);
+              }}
+            >
+              Reset
+            </button>
           </div>
+
+          {activityIntegrity && (
+            <div className={`mt-2 text-xs rounded-lg px-3 py-2 border ${activityIntegrity.valid ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/5' : 'border-red-500/30 text-red-300 bg-red-500/5'}`}>
+              Integrity: {activityIntegrity.valid ? 'VALID' : 'BROKEN'} • Entries: {activityIntegrity.count} • Latest hash: {(activityIntegrity.latestHash || 'N/A').slice(0, 16)}...
+            </div>
+          )}
 
           {Array.isArray(results.activity?.items) ? (
             <>
@@ -1109,7 +1193,15 @@ const NextLevel = () => {
                         <td className="p-2">{new Date(a.createdAt).toLocaleString()}</td>
                         <td className="p-2 uppercase">{a.action}</td>
                         <td className="p-2">{a.entityType} #{a.entityId ?? '-'}</td>
-                        <td className="p-2 text-slate-400">{Object.entries(a.payload || {}).slice(0, 2).map(([k, v]) => `${k}:${v}`).join(' • ') || '—'}</td>
+                        <td className="p-2 text-slate-400">
+                          {a.payload?.before || a.payload?.after ? (
+                            <span>
+                              before→after: {Object.keys(a.payload?.after || {}).slice(0, 2).map((k) => `${k}:${a.payload?.before?.[k] ?? '-'}→${a.payload?.after?.[k] ?? '-'}`).join(' • ')}
+                            </span>
+                          ) : (
+                            Object.entries(a.payload || {}).slice(0, 2).map(([k, v]) => `${k}:${v}`).join(' • ') || '—'
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -157,6 +157,8 @@ const connectDB = async () => {
         entity_type TEXT,
         entity_id INTEGER,
         payload_json TEXT,
+        prev_hash TEXT,
+        entry_hash TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )`,
@@ -192,6 +194,10 @@ const connectDB = async () => {
       `CREATE INDEX IF NOT EXISTS idx_scenarios_user_created ON scenarios(user_id, createdAt DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_created ON activity_logs(user_id, createdAt DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_area_action ON activity_logs(user_id, area, action, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_entity_created ON activity_logs(user_id, entity_type, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_activity_logs_user_entry_hash ON activity_logs(user_id, entry_hash)`,
+      `ALTER TABLE activity_logs ADD COLUMN prev_hash TEXT`,
+      `ALTER TABLE activity_logs ADD COLUMN entry_hash TEXT`,
     ];
 
     for (const sql of migrationStatements) {
