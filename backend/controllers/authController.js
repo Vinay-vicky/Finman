@@ -29,6 +29,11 @@ const cookieOptions = () => ({
   maxAge: REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000,
 });
 
+const clearCookieOptions = () => {
+  const { maxAge, ...options } = cookieOptions();
+  return options;
+};
+
 const createRefreshToken = (user) => jwt.sign(
   {
     sub: String(user.id),
@@ -138,7 +143,7 @@ const refresh = async (req, res, next) => {
     const user = await authService.getUserById(session.user_id);
     if (!user) {
       await authService.revokeRefreshTokenSession(tokenHash);
-      res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions());
+      res.clearCookie(REFRESH_COOKIE_NAME, clearCookieOptions());
       return next(new AppError(401, 'Session user no longer exists.'));
     }
 
@@ -146,7 +151,7 @@ const refresh = async (req, res, next) => {
     const nextSession = await issueSession(req, res, user);
     return res.json(nextSession);
   } catch (err) {
-    res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions());
+    res.clearCookie(REFRESH_COOKIE_NAME, clearCookieOptions());
     return next(new AppError(401, 'Invalid or expired refresh token.'));
   }
 };
@@ -159,7 +164,7 @@ const logout = async (req, res, next) => {
       await authService.revokeRefreshTokenSession(hashToken(tokenFromCookie));
     }
 
-    res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions());
+    res.clearCookie(REFRESH_COOKIE_NAME, clearCookieOptions());
     return res.json({ success: true, message: 'Logged out successfully.' });
   } catch (err) {
     return next(err);
@@ -201,7 +206,7 @@ const revokeSession = async (req, res, next) => {
 const logoutAll = async (req, res, next) => {
   try {
     await authService.revokeAllRefreshTokensForUser(req.user.id);
-    res.clearCookie(REFRESH_COOKIE_NAME, cookieOptions());
+    res.clearCookie(REFRESH_COOKIE_NAME, clearCookieOptions());
     return res.json({ success: true, message: 'Logged out from all sessions.' });
   } catch (err) {
     return next(err);

@@ -39,7 +39,12 @@ const otpLimiter = rateLimit({
 	max: 12,
 	standardHeaders: true,
 	legacyHeaders: false,
-	message: 'Too many OTP attempts from this IP. Please try again later.',
+	handler: (req, res) => {
+		return res.status(429).json({
+			success: false,
+			message: 'Too many OTP attempts from this IP. Please try again later.',
+		});
+	},
 });
 
 router.post('/register', validate(registerSchema), authController.register);
