@@ -228,6 +228,50 @@ const connectDB = async () => {
         FOREIGN KEY (requester_user_id) REFERENCES users(id),
         FOREIGN KEY (decided_by) REFERENCES users(id)
       )`,
+      `CREATE TABLE IF NOT EXISTS goal_autopilot_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        goal_id INTEGER,
+        name TEXT NOT NULL,
+        rule_type TEXT NOT NULL CHECK(rule_type IN ('roundup', 'payday_percent', 'threshold_sweep')),
+        rule_value REAL NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (goal_id) REFERENCES goals(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS anomaly_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        transaction_id INTEGER,
+        title_pattern TEXT,
+        amount REAL,
+        action TEXT NOT NULL CHECK(action IN ('expected', 'ignore')),
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS household_approval_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        approval_id INTEGER NOT NULL,
+        household_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        comment TEXT NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (approval_id) REFERENCES household_approvals(id),
+        FOREIGN KEY (household_id) REFERENCES households(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS weekly_cfo_briefs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        week_key TEXT NOT NULL,
+        brief_json TEXT NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, week_key),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
     ], 'write');
 
     // Lightweight migrations for existing local/hosted DBs.
@@ -273,6 +317,13 @@ const connectDB = async () => {
       `CREATE INDEX IF NOT EXISTS idx_household_limits_household_user ON household_spending_limits(household_id, user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_household_approvals_household_status_created ON household_approvals(household_id, status, createdAt DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_household_approvals_requester_created ON household_approvals(requester_user_id, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_goal_autopilot_rules_user_enabled ON goal_autopilot_rules(user_id, enabled, updatedAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_goal_autopilot_rules_goal ON goal_autopilot_rules(goal_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_anomaly_feedback_user_created ON anomaly_feedback(user_id, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_anomaly_feedback_txn ON anomaly_feedback(transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_household_approval_comments_approval_created ON household_approval_comments(approval_id, createdAt ASC)`,
+      `CREATE INDEX IF NOT EXISTS idx_household_approval_comments_household_created ON household_approval_comments(household_id, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_weekly_cfo_briefs_user_week ON weekly_cfo_briefs(user_id, week_key DESC)`,
     ];
 
     for (const sql of migrationStatements) {

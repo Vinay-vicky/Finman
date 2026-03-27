@@ -38,6 +38,52 @@ const getSubscriptions = async (req, res, next) => {
   }
 };
 
+const submitAnomalyFeedback = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.submitAnomalyFeedback(req.user.id, req.body || {});
+    res.status(201).json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const parseReceiptOcr = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.parseReceiptOcr(req.user.id, req.body || {});
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const simulateCashflowWhatIf = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.simulateCashflowWhatIf(req.user.id, req.body || {});
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getDebtPayoffPlan = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.getDebtPayoffPlan(req.user.id, req.body || {});
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getFinancialCalendar = async (req, res, next) => {
+  try {
+    const days = Number(req.query?.days || 45);
+    const data = await nextLevelService.getFinancialCalendar(req.user.id, days);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 const listNetWorth = async (req, res, next) => {
   try {
     const data = await nextLevelService.listNetWorthItems(req.user.id, req.query || {});
@@ -252,9 +298,56 @@ const getGoalOptimizer = async (req, res, next) => {
   }
 };
 
+const listGoalAutopilotRules = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.listGoalAutopilotRules(req.user.id);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const upsertGoalAutopilotRule = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.upsertGoalAutopilotRule(req.user.id, req.body || {});
+    res.status(req.body?.id ? 200 : 201).json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteGoalAutopilotRule = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return next(new AppError(400, 'Invalid autopilot rule id.'));
+    const data = await nextLevelService.deleteGoalAutopilotRule(req.user.id, id);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const projectGoalAutopilot = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.projectGoalAutopilot(req.user.id);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getExecutiveBrief = async (req, res, next) => {
   try {
     const data = await nextLevelService.getExecutiveBrief(req.user.id);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getWeeklyCfoBrief = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.getWeeklyCfoBrief(req.user.id);
     res.json(data);
   } catch (err) {
     next(err);
@@ -373,6 +466,34 @@ const decideHouseholdApproval = async (req, res, next) => {
   }
 };
 
+const listApprovalComments = async (req, res, next) => {
+  try {
+    const approvalId = Number(req.params.approvalId);
+    const data = await nextLevelService.listApprovalComments(req.user.id, approvalId);
+    res.json(data);
+  } catch (err) {
+    if (err.message === 'Approval request not found.' || err.message === 'Household not found or inaccessible.') {
+      return next(new AppError(404, err.message));
+    }
+    return next(err);
+  }
+};
+
+const addApprovalComment = async (req, res, next) => {
+  try {
+    const approvalId = Number(req.params.approvalId);
+    const comment = String(req.body?.comment || '').trim();
+    if (!comment) return next(new AppError(400, 'Comment is required.'));
+    const data = await nextLevelService.addApprovalComment(req.user.id, approvalId, comment);
+    res.status(201).json(data);
+  } catch (err) {
+    if (err.message === 'Approval request not found.' || err.message === 'Household not found or inaccessible.') {
+      return next(new AppError(404, err.message));
+    }
+    return next(err);
+  }
+};
+
 const listActivityTimeline = async (req, res, next) => {
   try {
     const data = await nextLevelService.listActivityTimeline(req.user.id, req.query || {});
@@ -407,6 +528,11 @@ module.exports = {
   getCashflowForecast,
   getAnomalies,
   getSubscriptions,
+  submitAnomalyFeedback,
+  parseReceiptOcr,
+  simulateCashflowWhatIf,
+  getDebtPayoffPlan,
+  getFinancialCalendar,
   listNetWorth,
   upsertNetWorth,
   deleteNetWorth,
@@ -427,7 +553,12 @@ module.exports = {
   joinHousehold,
   getTaxSummary,
   getGoalOptimizer,
+  listGoalAutopilotRules,
+  upsertGoalAutopilotRule,
+  deleteGoalAutopilotRule,
+  projectGoalAutopilot,
   getExecutiveBrief,
+  getWeeklyCfoBrief,
   getFinancialHealthScore,
   getAutoCategorySuggestions,
   submitAutoCategoryFeedback,
@@ -437,6 +568,8 @@ module.exports = {
   createHouseholdApprovalRequest,
   listHouseholdApprovals,
   decideHouseholdApproval,
+  listApprovalComments,
+  addApprovalComment,
   listActivityTimeline,
   exportActivityTimeline,
   verifyActivityIntegrity,

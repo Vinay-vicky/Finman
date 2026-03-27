@@ -8,7 +8,7 @@ import INRLoader from './INRLoader';
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
 const ActionCard = ({ title, subtitle, icon: Icon, status, children }) => (
-  <section className="glass-panel p-5 rounded-2xl border border-slate-700/50">
+  <section className="glass-panel p-4 md:p-5 rounded-2xl border border-slate-700/50">
     <div className="flex items-start justify-between gap-3 mb-4">
       <div>
         <h3 className="text-white text-lg font-semibold">{title}</h3>
@@ -115,6 +115,7 @@ const NextLevel = () => {
   const [approvalFilter, setApprovalFilter] = useState('pending');
   const [approvalRequestForm, setApprovalRequestForm] = useState({ amount: 0, title: 'Emergency Purchase', category: 'General', note: '' });
   const [autoCategoryForm, setAutoCategoryForm] = useState({ title: 'SuperMart Purchase', amount: 450, selectedCategory: '' });
+  const [receiptRawText, setReceiptRawText] = useState('STORE MART\nDate: 2026-03-27\nTOTAL ₹1,249.00\nGST ₹59.00');
   const [reconcileSourceLabel, setReconcileSourceLabel] = useState('bank-csv');
   const [reconcileRowsText, setReconcileRowsText] = useState(JSON.stringify([
     { title: 'SuperMart Purchase', amount: 450, type: 'expense', category: 'Groceries', date: new Date().toISOString().slice(0, 10) },
@@ -131,6 +132,25 @@ const NextLevel = () => {
   const [selectedRuleIds, setSelectedRuleIds] = useState([]);
   const [selectedBillIds, setSelectedBillIds] = useState([]);
   const [undoHistory, setUndoHistory] = useState([]);
+  const [whatIfForm, setWhatIfForm] = useState({ months: 6, sipIncrease: 2000, rentIncreasePct: 5, oneTimeExpense: 5000 });
+  const [debtPlanForm, setDebtPlanForm] = useState({
+    strategy: 'snowball',
+    extraPayment: 1500,
+    debtsText: JSON.stringify([
+      { name: 'Credit Card', balance: 85000, apr: 36, minPayment: 3500 },
+      { name: 'Personal Loan', balance: 180000, apr: 14, minPayment: 7000 },
+    ], null, 2),
+  });
+  const [calendarDays, setCalendarDays] = useState(45);
+  const [autopilotRuleForm, setAutopilotRuleForm] = useState({ name: 'Payday sweep 10%', ruleType: 'payday_percent', ruleValue: 10, goalId: '' });
+  const [approvalCommentDrafts, setApprovalCommentDrafts] = useState({});
+  const [showQuickTour, setShowQuickTour] = useState(() => {
+    try {
+      return window.localStorage.getItem('finman_nextlevel_tour_dismissed') !== '1';
+    } catch {
+      return true;
+    }
+  });
   const pendingUndoRef = useRef(new Map());
 
   const addUndoHistory = (entry) => {
@@ -203,11 +223,18 @@ const NextLevel = () => {
       { id: 'tax', title: 'Tax Workspace', icon: Receipt },
       { id: 'health', title: 'Financial Health Score', icon: Target },
       { id: 'autocategory', title: 'Smart Auto-Categorization', icon: BrainCircuit },
+      { id: 'receiptocr', title: 'AI Receipt OCR', icon: Receipt },
       { id: 'reconcile', title: 'Statement Reconciliation', icon: Repeat },
       { id: 'approval', title: 'Household Approval Workflow', icon: Users },
+      { id: 'approval-comments', title: 'Approval Comments Feed', icon: Users },
       { id: 'goals', title: 'Smart Goal Optimizer', icon: Target },
+      { id: 'goal-autopilot', title: 'Goal Auto-Pilot Rules', icon: Target },
       { id: 'executive', title: 'Executive Brief', icon: Briefcase },
+      { id: 'weekly-brief', title: 'Weekly CFO Brief', icon: Briefcase },
       { id: 'scenario', title: 'Scenario Lab', icon: Sparkles },
+      { id: 'whatif', title: 'What-if Simulator', icon: SlidersHorizontal },
+      { id: 'debt', title: 'Debt Snowball/Avalanche', icon: Wallet },
+      { id: 'calendar', title: 'Financial Calendar', icon: CalendarClock },
     ],
     []
   );
@@ -352,6 +379,114 @@ const NextLevel = () => {
       { method: 'POST', body: { sourceLabel: reconcileSourceLabel, rows: parsedRows } },
       { success: 'Statement reconciliation completed.' }
     );
+  };
+
+  const runDebtPlanner = async () => {
+    let debts;
+    try {
+      debts = JSON.parse(debtPlanForm.debtsText);
+    } catch {
+      pushToast('error', 'Debt list must be valid JSON array.');
+      return;
+    }
+
+    if (!Array.isArray(debts)) {
+      pushToast('error', 'Debt list JSON must be an array.');
+      return;
+    }
+
+    await callApi(
+      'debt-plan',
+      '/api/next-level/debt/payoff-plan',
+      {
+        method: 'POST',
+        body: {
+          strategy: debtPlanForm.strategy,
+          extraPayment: Number(debtPlanForm.extraPayment || 0),
+          debts,
+        },
+      },
+      { success: 'Debt payoff plan generated.' }
+    );
+  };
+
+  const loadApprovalComments = async (approvalId) => {
+    await callApi(`approval-comments-${approvalId}`, `/api/next-level/households/approvals/${approvalId}/comments`, {}, { error: false });
+  };
+
+  const submitApprovalComment = async (approvalId) => {
+    const comment = String(approvalCommentDrafts[approvalId] || '').trim();
+    if (!comment) {
+      pushToast('error', 'Enter a comment before posting.');
+      return;
+    }
+    const posted = await callApi(
+      `approval-comment-add-${approvalId}`,
+      `/api/next-level/households/approvals/${approvalId}/comments`,
+      { method: 'POST', body: { comment } },
+      { success: 'Comment added.' }
+    );
+    if (posted) {
+      setApprovalCommentDrafts((prev) => ({ ...prev, [approvalId]: '' }));
+      loadApprovalComments(approvalId);
+    }
+  };
+
+  const saveGoalAutopilotRule = async () => {
+    const saved = await callApi(
+      'goal-autopilot-save',
+      '/api/next-level/goals/autopilot/rules',
+      {
+        method: 'POST',
+        body: {
+          ...autopilotRuleForm,
+          goalId: autopilotRuleForm.goalId ? Number(autopilotRuleForm.goalId) : undefined,
+          ruleValue: Number(autopilotRuleForm.ruleValue || 0),
+        },
+      },
+      { success: autopilotRuleForm.id ? 'Autopilot rule updated.' : 'Autopilot rule created.' }
+    );
+    if (saved) {
+      setAutopilotRuleForm({ name: 'Payday sweep 10%', ruleType: 'payday_percent', ruleValue: 10, goalId: '' });
+      callApi('goal-autopilot-rules', '/api/next-level/goals/autopilot/rules', {}, { error: false });
+      callApi('goal-autopilot-projection', '/api/next-level/goals/autopilot/projection', {}, { error: false });
+    }
+  };
+
+  const runQuickTourAction = async (actionId) => {
+    if (actionId === 'health') {
+      await callApi('healthscore', '/api/next-level/health/score');
+      return;
+    }
+    if (actionId === 'forecast') {
+      await callApi('forecast', '/api/next-level/cashflow/forecast?months=6');
+      return;
+    }
+    if (actionId === 'weekly') {
+      await callApi('weekly-brief', '/api/next-level/reports/weekly-brief');
+      return;
+    }
+    if (actionId === 'calendar') {
+      await callApi('calendar-events', `/api/next-level/calendar/events${qs({ days: calendarDays || 45 })}`);
+    }
+  };
+
+  const dismissQuickTour = () => {
+    setShowQuickTour(false);
+    try {
+      window.localStorage.setItem('finman_nextlevel_tour_dismissed', '1');
+    } catch {
+      // ignore storage issues
+    }
+  };
+
+  const restoreQuickTour = () => {
+    setShowQuickTour(true);
+    try {
+      window.localStorage.removeItem('finman_nextlevel_tour_dismissed');
+    } catch {
+      // ignore storage issues
+    }
   };
   const loadActivityTimeline = (query = activityQuery) => callApi('activity', `/api/next-level/activity${qs(query)}`, {}, { error: false });
   const loadActivityIntegrity = async () => {
@@ -744,7 +879,7 @@ const NextLevel = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 w-[320px] max-w-[calc(100vw-2rem)]">
         {toasts.map((t) => (
           <div
@@ -794,11 +929,15 @@ const NextLevel = () => {
         </div>
       )}
 
-      <header className="glass-panel p-6 rounded-2xl border border-emerald-500/20">
+      <header className="glass-panel p-4 md:p-6 rounded-2xl border border-emerald-500/20">
         <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">Next-Level Finance Suite</h2>
         <p className="text-slate-300 text-sm md:text-base">
-          All 12 advanced features are now available in v1. Each module is live and connected to backend APIs.
+          Premium add-on stack is now integrated end-to-end. Each module is live and connected to backend APIs.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-slate-400">Need guidance?</span>
+          <button className="btn-secondary !w-auto !px-2 !py-1 text-[11px]" onClick={restoreQuickTour}>Show quick tour</button>
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {features.map((f) => (
             <span key={f.id} className="text-xs px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300">
@@ -808,7 +947,25 @@ const NextLevel = () => {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      {showQuickTour && (
+        <section className="glass-panel p-4 md:p-5 rounded-2xl border border-emerald-500/30">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="text-white text-base md:text-lg font-semibold">Quick Tour (60 seconds)</h3>
+              <p className="text-slate-300 text-xs md:text-sm">Start with health score, then forecast runway, then your weekly CFO brief.</p>
+            </div>
+            <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={dismissQuickTour}>Dismiss</button>
+          </div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+            <button className="btn-primary" onClick={() => runQuickTourAction('health')}>1) Compute Health Score</button>
+            <button className="btn-primary" onClick={() => runQuickTourAction('forecast')}>2) Run Forecast</button>
+            <button className="btn-primary" onClick={() => runQuickTourAction('weekly')}>3) Generate Weekly Brief</button>
+            <button className="btn-secondary" onClick={() => runQuickTourAction('calendar')}>4) Load Financial Calendar</button>
+          </div>
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 md:gap-4">
         <ActionCard title="1) AI Finance Copilot" subtitle="Narrative summary and recommendation" icon={BrainCircuit}>
           <button className="btn-primary" onClick={() => callApi('copilot', '/api/next-level/copilot/summary')}>
             {loadingKey === 'copilot' ? 'Loading…' : 'Generate Summary'}
@@ -884,11 +1041,11 @@ const NextLevel = () => {
               <div className="mt-2 overflow-auto rounded-xl border border-slate-700">
                 <table className="w-full text-xs text-slate-300">
                   <thead className="bg-slate-900/70 text-slate-400">
-                    <tr><th className="p-2 text-left">Title</th><th className="p-2 text-left">Category</th><th className="p-2 text-right">Amount</th></tr>
+                    <tr><th className="p-2 text-left">Title</th><th className="p-2 text-left">Category</th><th className="p-2 text-right">Amount</th><th className="p-2 text-right">Action</th></tr>
                   </thead>
                   <tbody>
                     {results.anomalies.anomalies.map((a) => (
-                      <tr key={a.id} className="border-t border-slate-800"><td className="p-2">{a.title}</td><td className="p-2">{a.category}</td><td className="p-2 text-right text-red-300">{money(a.amount)}</td></tr>
+                      <tr key={a.id} className="border-t border-slate-800"><td className="p-2">{a.title}</td><td className="p-2">{a.category}</td><td className="p-2 text-right text-red-300">{money(a.amount)}</td><td className="p-2 text-right"><button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => callApi('anomaly-feedback', '/api/next-level/transactions/anomalies/feedback', { method: 'POST', body: { transactionId: a.id, titlePattern: a.title, amount: a.amount, action: 'expected' } }, { success: 'Marked as expected.' }).then(() => callApi('anomalies', '/api/next-level/transactions/anomalies', {}, { error: false }))}>Mark expected</button></td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -1029,15 +1186,20 @@ const NextLevel = () => {
           {Array.isArray(results.subscriptions?.candidates) ? (
             <div className="mt-3 overflow-auto rounded-xl border border-slate-700">
               <table className="w-full text-xs text-slate-300">
-                <thead className="bg-slate-900/70 text-slate-400"><tr><th className="p-2 text-left">Title</th><th className="p-2 text-right">Avg</th><th className="p-2 text-right">Freq</th></tr></thead>
+                <thead className="bg-slate-900/70 text-slate-400"><tr><th className="p-2 text-left">Title</th><th className="p-2 text-right">Avg</th><th className="p-2 text-right">Annual</th><th className="p-2 text-right">Status</th></tr></thead>
                 <tbody>
                   {results.subscriptions.candidates.slice(0, 8).map((s, idx) => (
-                    <tr key={`${s.title}-${idx}`} className="border-t border-slate-800"><td className="p-2">{s.title}</td><td className="p-2 text-right">{money(s.avgAmount)}</td><td className="p-2 text-right">{s.occurrences}</td></tr>
+                    <tr key={`${s.title}-${idx}`} className="border-t border-slate-800"><td className="p-2">{s.title}</td><td className="p-2 text-right">{money(s.avgAmount)}</td><td className="p-2 text-right">{money(s.estimatedAnnualImpact)}</td><td className="p-2 text-right capitalize">{s.status?.replace('-', ' ')}</td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : <EmptyState text="Run analysis to list repeating payments." />}
+          {results.subscriptions?.summary && (
+            <p className="mt-2 text-xs text-slate-300">
+              {results.subscriptions.summary.unusedCandidateCount} unused-candidate(s) • Estimated annual impact {money(results.subscriptions.summary.estimatedAnnualImpact)}
+            </p>
+          )}
           <ErrorState error={results.subscriptions?.error} />
         </ActionCard>
 
@@ -1469,14 +1631,33 @@ const NextLevel = () => {
                             <td className="p-2 text-right">{money(a.amount)}</td>
                             <td className="p-2 uppercase">{a.status}</td>
                             <td className="p-2">
-                              {a.status === 'pending' && ['owner', 'editor'].includes(activeHousehold?.yourRole) ? (
+                              <div className="space-y-1">
+                                {a.status === 'pending' && ['owner', 'editor'].includes(activeHousehold?.yourRole) ? (
+                                  <div className="flex gap-1">
+                                    <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => decideApproval(a.id, 'approved')}>Approve</button>
+                                    <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => decideApproval(a.id, 'rejected')}>Reject</button>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
+                                <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => loadApprovalComments(a.id)}>Comments</button>
                                 <div className="flex gap-1">
-                                  <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => decideApproval(a.id, 'approved')}>Approve</button>
-                                  <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => decideApproval(a.id, 'rejected')}>Reject</button>
+                                  <input
+                                    className="input-glass !py-1 !px-2 text-[11px]"
+                                    placeholder="Add comment"
+                                    value={approvalCommentDrafts[a.id] || ''}
+                                    onChange={(e) => setApprovalCommentDrafts((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                                  />
+                                  <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => submitApprovalComment(a.id)}>Post</button>
                                 </div>
-                              ) : (
-                                <span className="text-slate-300">—</span>
-                              )}
+                                {Array.isArray(results[`approval-comments-${a.id}`]?.items) && results[`approval-comments-${a.id}`].items.length > 0 && (
+                                  <div className="rounded border border-emerald-500/15 p-1 max-h-20 overflow-auto">
+                                    {results[`approval-comments-${a.id}`].items.slice(-3).map((c) => (
+                                      <p key={c.id} className="text-[10px] text-slate-300"><span className="text-emerald-300">{c.username}:</span> {c.comment}</p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1500,16 +1681,23 @@ const NextLevel = () => {
             ])}><Download size={14} className="inline mr-1" /> CSV</button>
           </div>
           {Array.isArray(results.tax?.categories) ? (
-            <div className="mt-3 overflow-auto rounded-xl border border-slate-700">
-              <table className="w-full text-xs text-slate-300">
-                <thead className="bg-slate-900/70 text-slate-400"><tr><th className="p-2 text-left">Category</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Deductible?</th></tr></thead>
-                <tbody>
-                  {results.tax.categories.map((c) => (
-                    <tr key={c.category} className="border-t border-slate-800"><td className="p-2">{c.category}</td><td className="p-2 text-right">{money(c.total)}</td><td className="p-2 text-right">{c.likelyDeductible ? 'Yes' : 'No'}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Est. Deductible</p><p className="text-emerald-300 font-semibold">{money(results.tax.estimatedDeductibleTotal)}</p></div>
+                <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">80C Used</p><p className="text-white font-semibold">{money(results.tax.indiaTrackers?.section80C?.estimate)}</p></div>
+                <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">80C Remaining</p><p className="text-amber-300 font-semibold">{money(results.tax.indiaTrackers?.section80C?.remainingCap)}</p></div>
+              </div>
+              <div className="mt-3 overflow-auto rounded-xl border border-slate-700">
+                <table className="w-full text-xs text-slate-300">
+                  <thead className="bg-slate-900/70 text-slate-400"><tr><th className="p-2 text-left">Category</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Deductible?</th></tr></thead>
+                  <tbody>
+                    {results.tax.categories.map((c) => (
+                      <tr key={c.category} className="border-t border-slate-800"><td className="p-2">{c.category}</td><td className="p-2 text-right">{money(c.total)}</td><td className="p-2 text-right">{c.likelyDeductible ? 'Yes' : 'No'}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : <EmptyState text="Generate yearly tax summary to populate this table." />}
           <ErrorState error={results.tax?.error} />
         </ActionCard>
@@ -1780,6 +1968,144 @@ const NextLevel = () => {
             </div>
           ) : <EmptyState text="Run a scenario to see projected impact." />}
           <ErrorState error={results.scenario?.error} />
+        </ActionCard>
+
+        <ActionCard title="13) AI Receipt OCR" subtitle="Parse receipt text into structured transaction fields" icon={Receipt} status={getStatus('receipt-ocr')}>
+          <textarea
+            className="input-glass min-h-[120px] text-xs font-mono"
+            value={receiptRawText}
+            onChange={(e) => setReceiptRawText(e.target.value)}
+            placeholder="Paste receipt text or OCR output"
+          />
+          <button className="btn-primary mt-2" onClick={() => callApi('receipt-ocr', '/api/next-level/receipts/ocr', { method: 'POST', body: { rawText: receiptRawText } })}>
+            Extract Receipt Data
+          </button>
+          {results['receipt-ocr']?.merchant && (
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Merchant</p><p className="text-white font-semibold">{results['receipt-ocr'].merchant}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Amount</p><p className="text-emerald-300 font-semibold">{money(results['receipt-ocr'].amount)}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Category</p><p className="text-white font-semibold">{results['receipt-ocr'].category}</p></div>
+            </div>
+          )}
+          <ErrorState error={results['receipt-ocr']?.error} />
+        </ActionCard>
+
+        <ActionCard title="14) What-if Cashflow Simulator" subtitle="Simulate SIP/rent/one-time changes" icon={SlidersHorizontal} status={getStatus('what-if')}>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <input className="input-glass" type="number" value={whatIfForm.months} onChange={(e) => setWhatIfForm((p) => ({ ...p, months: Number(e.target.value || 1) }))} placeholder="Months" />
+            <input className="input-glass" type="number" value={whatIfForm.sipIncrease} onChange={(e) => setWhatIfForm((p) => ({ ...p, sipIncrease: Number(e.target.value || 0) }))} placeholder="SIP increase" />
+            <input className="input-glass" type="number" value={whatIfForm.rentIncreasePct} onChange={(e) => setWhatIfForm((p) => ({ ...p, rentIncreasePct: Number(e.target.value || 0) }))} placeholder="Rent rise %" />
+            <input className="input-glass" type="number" value={whatIfForm.oneTimeExpense} onChange={(e) => setWhatIfForm((p) => ({ ...p, oneTimeExpense: Number(e.target.value || 0) }))} placeholder="One-time expense" />
+          </div>
+          <button className="btn-primary mt-2" onClick={() => callApi('what-if', '/api/next-level/cashflow/what-if', { method: 'POST', body: whatIfForm })}>Simulate</button>
+          {results['what-if']?.adjustedMonthlyNet !== undefined && (
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Baseline Net</p><p className="text-white font-semibold">{money(results['what-if'].baselineMonthlyNet)}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Adjusted Net</p><p className="text-emerald-300 font-semibold">{money(results['what-if'].adjustedMonthlyNet)}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Ending Balance</p><p className="text-white font-semibold">{money(results['what-if'].projectedEndingBalance)}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Risk</p><p className="text-amber-300 font-semibold uppercase">{results['what-if'].riskLevel}</p></div>
+            </div>
+          )}
+          <ErrorState error={results['what-if']?.error} />
+        </ActionCard>
+
+        <ActionCard title="15) Debt Planner" subtitle="Compare snowball and avalanche payoff paths" icon={Wallet} status={getStatus('debt-plan')}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <select className="input-glass" value={debtPlanForm.strategy} onChange={(e) => setDebtPlanForm((p) => ({ ...p, strategy: e.target.value }))}>
+              <option value="snowball">Snowball</option>
+              <option value="avalanche">Avalanche</option>
+            </select>
+            <input className="input-glass" type="number" value={debtPlanForm.extraPayment} onChange={(e) => setDebtPlanForm((p) => ({ ...p, extraPayment: Number(e.target.value || 0) }))} placeholder="Extra monthly payment" />
+            <button className="btn-primary" onClick={runDebtPlanner}>Generate Plan</button>
+          </div>
+          <textarea className="input-glass mt-2 min-h-[120px] text-xs font-mono" value={debtPlanForm.debtsText} onChange={(e) => setDebtPlanForm((p) => ({ ...p, debtsText: e.target.value }))} />
+          {results['debt-plan']?.totals && (
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Total Debt</p><p className="text-white font-semibold">{money(results['debt-plan'].totals.totalBalance)}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Weighted APR</p><p className="text-white font-semibold">{results['debt-plan'].totals.weightedApr}%</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Months</p><p className="text-emerald-300 font-semibold">{results['debt-plan'].totals.estimatedMonths || '—'}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Estimated Interest</p><p className="text-red-300 font-semibold">{results['debt-plan'].totals.estimatedInterest !== null ? money(results['debt-plan'].totals.estimatedInterest) : '—'}</p></div>
+            </div>
+          )}
+          <ErrorState error={results['debt-plan']?.error} />
+        </ActionCard>
+
+        <ActionCard title="16) Financial Calendar" subtitle="Bills, recurring events, goal deadlines, approvals" icon={CalendarClock} status={getStatus('calendar-events')}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input className="input-glass" type="number" min={1} max={120} value={calendarDays} onChange={(e) => setCalendarDays(Number(e.target.value || 45))} placeholder="Horizon days" />
+            <button className="btn-primary" onClick={() => callApi('calendar-events', `/api/next-level/calendar/events${qs({ days: calendarDays })}`)}>Load Events</button>
+            <button className="btn-secondary" onClick={() => exportRows('financial-calendar', results['calendar-events']?.events || [], [
+              { label: 'Date', value: (r) => r.date },
+              { label: 'Type', value: (r) => r.type },
+              { label: 'Title', value: (r) => r.title },
+              { label: 'Amount', value: (r) => r.amount },
+            ])}><Download size={14} className="inline mr-1" /> CSV</button>
+          </div>
+          {Array.isArray(results['calendar-events']?.events) ? (
+            <div className="mt-2 overflow-auto rounded-xl border border-slate-700 max-h-56">
+              <table className="w-full text-xs text-slate-300">
+                <thead className="bg-slate-900/70 text-slate-400"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Type</th><th className="p-2 text-left">Title</th><th className="p-2 text-right">Amount</th></tr></thead>
+                <tbody>
+                  {results['calendar-events'].events.slice(0, 50).map((e, idx) => (
+                    <tr key={`${e.type}-${e.date}-${idx}`} className="border-t border-slate-800"><td className="p-2">{new Date(e.date).toLocaleDateString()}</td><td className="p-2 capitalize">{e.type}</td><td className="p-2">{e.title}</td><td className="p-2 text-right">{money(e.amount)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <EmptyState text="Load calendar events to view your next money milestones." />}
+          <ErrorState error={results['calendar-events']?.error} />
+        </ActionCard>
+
+        <ActionCard title="17) Goal Auto-Pilot" subtitle="Rule-based goal contributions and projection" icon={Target} status={getStatus('goal-autopilot-save', 'goal-autopilot-rules', 'goal-autopilot-projection')}>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <input className="input-glass" placeholder="Rule name" value={autopilotRuleForm.name} onChange={(e) => setAutopilotRuleForm((p) => ({ ...p, name: e.target.value }))} />
+            <select className="input-glass" value={autopilotRuleForm.ruleType} onChange={(e) => setAutopilotRuleForm((p) => ({ ...p, ruleType: e.target.value }))}>
+              <option value="payday_percent">payday_percent</option>
+              <option value="roundup">roundup</option>
+              <option value="threshold_sweep">threshold_sweep</option>
+            </select>
+            <input className="input-glass" type="number" value={autopilotRuleForm.ruleValue} onChange={(e) => setAutopilotRuleForm((p) => ({ ...p, ruleValue: Number(e.target.value || 0) }))} placeholder="Rule value" />
+            <button className="btn-primary" onClick={saveGoalAutopilotRule}>Save Rule</button>
+          </div>
+          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+            <button className="btn-secondary" onClick={() => callApi('goal-autopilot-rules', '/api/next-level/goals/autopilot/rules')}>List Rules</button>
+            <button className="btn-secondary" onClick={() => callApi('goal-autopilot-projection', '/api/next-level/goals/autopilot/projection')}>Project Contributions</button>
+          </div>
+          {Array.isArray(results['goal-autopilot-rules']?.items) && (
+            <div className="mt-2 text-xs text-slate-300 rounded-lg border border-slate-700 p-2">
+              Rules: {results['goal-autopilot-rules'].items.map((r) => `${r.name} (${r.rule_type}:${r.rule_value})`).join(' • ') || 'None'}
+            </div>
+          )}
+          {results['goal-autopilot-projection']?.projections && (
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+              {results['goal-autopilot-projection'].projections.map((p) => (
+                <div key={p.goalId} className="bg-slate-900/50 rounded-lg p-2 border border-slate-700">
+                  <p className="text-white font-semibold">{p.goalName}</p>
+                  <p className="text-slate-300">Remaining: {money(p.remaining)}</p>
+                  <p className="text-emerald-300">ETA: {p.estimatedMonthsToGoal ?? '—'} month(s)</p>
+                </div>
+              ))}
+            </div>
+          )}
+          <ErrorState error={results['goal-autopilot-save']?.error || results['goal-autopilot-rules']?.error || results['goal-autopilot-projection']?.error} />
+        </ActionCard>
+
+        <ActionCard title="18) Weekly CFO Brief" subtitle="Concise weekly recommendations and leakage alerts" icon={Briefcase} status={getStatus('weekly-brief')}>
+          <button className="btn-primary" onClick={() => callApi('weekly-brief', '/api/next-level/reports/weekly-brief')}>Generate Weekly Brief</button>
+          {results['weekly-brief']?.snapshot ? (
+            <>
+              <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Week</p><p className="text-white font-semibold">{results['weekly-brief'].weekKey}</p></div>
+                <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Health</p><p className="text-emerald-300 font-semibold">{results['weekly-brief'].snapshot.healthScore}</p></div>
+                <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Anomalies</p><p className="text-white font-semibold">{results['weekly-brief'].snapshot.anomalyCount}</p></div>
+                <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Subscription Leak</p><p className="text-red-300 font-semibold">{money(results['weekly-brief'].snapshot.subscriptionLeak)}</p></div>
+              </div>
+              <ul className="mt-2 list-disc pl-5 text-xs text-slate-300 space-y-1">
+                {(results['weekly-brief'].recommendations || []).map((r, idx) => <li key={`weekly-rec-${idx}`}>{r}</li>)}
+              </ul>
+            </>
+          ) : <EmptyState text="Generate your weekly CFO brief for prioritized action items." />}
+          <ErrorState error={results['weekly-brief']?.error} />
         </ActionCard>
       </div>
     </div>

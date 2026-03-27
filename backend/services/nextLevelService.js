@@ -26,6 +26,30 @@ const daysDiff = (dateA, dateB) => {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 };
 
+const getMonthKey = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+};
+
+const getWeekKey = (d = new Date()) => {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+};
+
+const parseAmountFromText = (text) => {
+  if (!text) return null;
+  const match = String(text).match(/(?:₹|rs\.?\s*)\s*([0-9,]+(?:\.[0-9]{1,2})?)|\b([0-9,]+(?:\.[0-9]{1,2})?)\b/gi);
+  if (!match || !match.length) return null;
+  const cleaned = String(match[0]).replace(/[^0-9.]/g, '');
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+};
+
 const getHouseholdMembership = async (householdId, userId) => {
   const result = await db.execute({
     sql: `
@@ -407,16 +431,37 @@ const reconcileStatementRows = async (userId, payload = {}) => {
 };
 
 const getAnomalies = async (userId) => {
-  const rows = await db.execute({
-    sql: `
-      SELECT id, title, amount, category, date
-      FROM transactions
-      WHERE user_id = ? AND type = 'expense'
-      ORDER BY date DESC
-      LIMIT 400
-    `,
-    args: [userId],
-  });
+  const [rows, feedback] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT id, title, amount, category, date
+        FROM transactions
+        WHERE user_id = ? AND type = 'expense'
+        ORDER BY date DESC
+        LIMIT 400
+      `,
+      args: [userId],
+    }),
+    db.execute({
+      sql: `
+        SELECT transaction_id AS transactionId, title_pattern AS titlePattern, amount
+        FROM anomaly_feedback
+        WHERE user_id = ? AND action = 'expected'
+        ORDER BY createdAt DESC
+        LIMIT 300
+      `,
+      args: [userId],
+    }),
+  ]);
+
+  const expectedTransactionIds = new Set(
+    feedback.rows
+      .map((f) => Number(f.transactionId || 0))
+      .filter((id) => id > 0)
+  );
+  const expectedTitlePatterns = feedback.rows
+    .map((f) => norm(f.titlePattern))
+    .filter(Boolean);
 
   const values = rows.rows.map((r) => toNumber(r.amount));
   if (values.length < 5) {
@@ -428,10 +473,20 @@ const getAnomalies = async (userId) => {
   const stdev = Math.sqrt(variance);
   const threshold = mean + stdev * 2;
 
-  const anomalies = rows.rows.filter((r) => toNumber(r.amount) >= threshold).slice(0, 15);
+  const anomalies = rows.rows
+    .filter((r) => {
+      if (toNumber(r.amount) < threshold) return false;
+      if (expectedTransactionIds.has(Number(r.id))) return false;
+      const title = norm(r.title);
+      if (expectedTitlePatterns.some((p) => p && (title.includes(p) || p.includes(title)))) return false;
+      return true;
+    })
+    .slice(0, 15);
 
   return {
     threshold: Number(threshold.toFixed(2)),
+    totalScanned: rows.rows.length,
+    ignoredAsExpected: expectedTransactionIds.size,
     anomalies,
   };
 };
@@ -458,9 +513,298 @@ const getSubscriptionsInsights = async (userId) => {
       occurrences: toNumber(r.count),
       avgAmount: Number(toNumber(r.avg_amount).toFixed(2)),
       estimatedMonthlyImpact: Number(toNumber(r.avg_amount).toFixed(2)),
+      estimatedAnnualImpact: Number((toNumber(r.avg_amount) * 12).toFixed(2)),
     }));
 
-  return { candidates };
+  const [recent90d, recent30d] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT LOWER(TRIM(title)) AS normalized_title, COUNT(*) AS cnt
+        FROM transactions
+        WHERE user_id = ? AND type = 'expense' AND date >= datetime('now', '-90 day')
+        GROUP BY LOWER(TRIM(title))
+      `,
+      args: [userId],
+    }),
+    db.execute({
+      sql: `
+        SELECT LOWER(TRIM(title)) AS normalized_title, COUNT(*) AS cnt
+        FROM transactions
+        WHERE user_id = ? AND type = 'expense' AND date >= datetime('now', '-30 day')
+        GROUP BY LOWER(TRIM(title))
+      `,
+      args: [userId],
+    }),
+  ]);
+
+  const count90 = new Map(recent90d.rows.map((r) => [String(r.normalized_title || ''), Number(r.cnt || 0)]));
+  const count30 = new Map(recent30d.rows.map((r) => [String(r.normalized_title || ''), Number(r.cnt || 0)]));
+
+  const candidatesWithStatus = candidates.map((c) => {
+    const key = norm(c.title);
+    const last90 = count90.get(key) || 0;
+    const last30 = count30.get(key) || 0;
+    const likelyInactive = last90 >= 2 && last30 === 0;
+    return {
+      ...c,
+      status: likelyInactive ? 'unused-candidate' : 'active',
+      remindAction: likelyInactive ? 'review-or-cancel' : 'keep-tracking',
+    };
+  });
+
+  return {
+    candidates: candidatesWithStatus,
+    summary: {
+      count: candidatesWithStatus.length,
+      activeCount: candidatesWithStatus.filter((c) => c.status === 'active').length,
+      unusedCandidateCount: candidatesWithStatus.filter((c) => c.status === 'unused-candidate').length,
+      estimatedMonthlyImpact: Number(candidatesWithStatus.reduce((a, c) => a + Number(c.estimatedMonthlyImpact || 0), 0).toFixed(2)),
+      estimatedAnnualImpact: Number(candidatesWithStatus.reduce((a, c) => a + Number(c.estimatedAnnualImpact || 0), 0).toFixed(2)),
+    },
+  };
+};
+
+const submitAnomalyFeedback = async (userId, payload = {}) => {
+  const transactionId = Number(payload.transactionId || 0) || null;
+  const titlePattern = payload.titlePattern ? String(payload.titlePattern).slice(0, 120) : null;
+  const amount = payload.amount !== undefined ? Number(payload.amount || 0) : null;
+  const action = String(payload.action || 'expected');
+
+  await db.execute({
+    sql: `
+      INSERT INTO anomaly_feedback (user_id, transaction_id, title_pattern, amount, action)
+      VALUES (?, ?, ?, ?, ?)
+    `,
+    args: [userId, transactionId, titlePattern, amount, action],
+  });
+
+  await logActivity(userId, 'next-level', 'create', 'anomaly-feedback', transactionId, {
+    action,
+    titlePattern,
+    amount,
+  });
+
+  return { success: true };
+};
+
+const parseReceiptOcr = async (userId, payload = {}) => {
+  const rawText = String(payload.rawText || payload.text || '').trim();
+  if (!rawText) {
+    return {
+      merchant: null,
+      amount: null,
+      date: null,
+      taxAmount: null,
+      category: 'Other',
+      confidence: 0,
+      rawText: '',
+    };
+  }
+
+  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const merchant = lines[0]?.slice(0, 120) || null;
+  const amount = parseAmountFromText(rawText);
+  const dateMatch = rawText.match(/\b(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})\b/);
+  const date = dateMatch ? new Date(dateMatch[0]).toISOString().slice(0, 10) : null;
+
+  const taxLine = lines.find((l) => /gst|tax|vat/i.test(l)) || '';
+  const taxAmount = parseAmountFromText(taxLine);
+
+  const categoryGuess = await getAutoCategorySuggestions(userId, merchant || rawText.slice(0, 80), amount || 0);
+  const category = categoryGuess.suggested || 'Other';
+  const confidence = Number(([
+    merchant ? 0.25 : 0,
+    amount ? 0.35 : 0,
+    date ? 0.15 : 0,
+    taxAmount ? 0.1 : 0,
+    category !== 'Other' ? 0.15 : 0,
+  ].reduce((a, b) => a + b, 0)).toFixed(2));
+
+  await logActivity(userId, 'next-level', 'create', 'receipt-ocr', null, {
+    merchant,
+    amount,
+    date,
+    category,
+    confidence,
+  });
+
+  return {
+    merchant,
+    amount,
+    date,
+    taxAmount,
+    category,
+    confidence,
+    rawText,
+  };
+};
+
+const simulateCashflowWhatIf = async (userId, payload = {}) => {
+  const months = Math.max(1, Math.min(36, Number(payload.months || 6)));
+  const sipIncrease = Number(payload.sipIncrease || 0);
+  const rentIncreasePct = Number(payload.rentIncreasePct || 0);
+  const oneTimeExpense = Number(payload.oneTimeExpense || 0);
+
+  const forecast = await getCashflowForecast(userId, months);
+  const currentMonthlyNet = Number(forecast.averageMonthlyNet || 0);
+
+  const rentSpend = await db.execute({
+    sql: `
+      SELECT COALESCE(AVG(amount), 0) AS avgRent
+      FROM transactions
+      WHERE user_id = ? AND type = 'expense' AND LOWER(category) LIKE '%rent%'
+    `,
+    args: [userId],
+  });
+  const avgRent = Number(rentSpend.rows[0]?.avgRent || 0);
+  const rentImpact = avgRent * (rentIncreasePct / 100);
+
+  const adjustedMonthlyNet = currentMonthlyNet - sipIncrease - rentImpact;
+  const projectedEndingBalance = Number((Number(forecast.currentBalance || 0) + (adjustedMonthlyNet * months) - oneTimeExpense).toFixed(2));
+
+  return {
+    months,
+    baselineMonthlyNet: Number(currentMonthlyNet.toFixed(2)),
+    adjustedMonthlyNet: Number(adjustedMonthlyNet.toFixed(2)),
+    sipIncrease: Number(sipIncrease.toFixed(2)),
+    rentIncreasePct: Number(rentIncreasePct.toFixed(2)),
+    rentImpact: Number(rentImpact.toFixed(2)),
+    oneTimeExpense: Number(oneTimeExpense.toFixed(2)),
+    projectedEndingBalance,
+    deltaVsBaseline: Number(((adjustedMonthlyNet - currentMonthlyNet) * months - oneTimeExpense).toFixed(2)),
+    riskLevel: adjustedMonthlyNet < 0 ? 'high' : adjustedMonthlyNet < currentMonthlyNet * 0.5 ? 'medium' : 'low',
+  };
+};
+
+const getDebtPayoffPlan = async (userId, payload = {}) => {
+  const strategy = String(payload.strategy || 'snowball');
+  const extraPayment = Math.max(0, Number(payload.extraPayment || 0));
+  const debts = Array.isArray(payload.debts) ? payload.debts : [];
+
+  const normalized = debts
+    .map((d) => ({
+      name: String(d.name || 'Debt').slice(0, 100),
+      balance: Math.max(0, Number(d.balance || 0)),
+      apr: Math.max(0, Number(d.apr || 0)),
+      minPayment: Math.max(0, Number(d.minPayment || 0)),
+    }))
+    .filter((d) => d.balance > 0);
+
+  const ordered = [...normalized].sort((a, b) => {
+    if (strategy === 'avalanche') return b.apr - a.apr;
+    return a.balance - b.balance;
+  });
+
+  const totalMin = ordered.reduce((a, d) => a + d.minPayment, 0);
+  const totalBalance = ordered.reduce((a, d) => a + d.balance, 0);
+  const weightedApr = totalBalance > 0
+    ? ordered.reduce((a, d) => a + (d.balance * d.apr), 0) / totalBalance
+    : 0;
+
+  const monthlyRate = weightedApr / 1200;
+  const monthlyPayment = totalMin + extraPayment;
+  const estimatedMonths = monthlyPayment <= 0
+    ? null
+    : Math.max(1, Math.ceil(Math.log(monthlyPayment / Math.max(1, monthlyPayment - (totalBalance * monthlyRate))) / Math.log(1 + monthlyRate)));
+
+  const estimatedInterest = estimatedMonths
+    ? Number(((monthlyPayment * estimatedMonths) - totalBalance).toFixed(2))
+    : null;
+
+  await logActivity(userId, 'next-level', 'create', 'debt-plan', null, {
+    strategy,
+    debtCount: ordered.length,
+    totalBalance,
+  });
+
+  return {
+    strategy,
+    debts: ordered,
+    totals: {
+      totalBalance: Number(totalBalance.toFixed(2)),
+      totalMinPayment: Number(totalMin.toFixed(2)),
+      extraPayment: Number(extraPayment.toFixed(2)),
+      weightedApr: Number(weightedApr.toFixed(2)),
+      estimatedMonths,
+      estimatedInterest,
+    },
+  };
+};
+
+const getFinancialCalendar = async (userId, days = 45) => {
+  const safeDays = Math.max(1, Math.min(120, Number(days || 45)));
+  const monthKey = getMonthKey();
+  const [upcomingBills, recurring, goals, approvals] = await Promise.all([
+    getUpcomingBills(userId, { dueWithinDays: safeDays, page: 1, limit: 100 }),
+    db.execute({
+      sql: `
+        SELECT id, title, amount, frequency, next_date AS nextDate, category
+        FROM recurring_transactions
+        WHERE user_id = ? AND paused = 0 AND datetime(next_date) <= datetime('now', ?)
+        ORDER BY next_date ASC
+        LIMIT 100
+      `,
+      args: [userId, `+${safeDays} day`],
+    }),
+    db.execute({
+      sql: `
+        SELECT id, name, target_amount AS targetAmount, current_amount AS currentAmount, deadline
+        FROM goals
+        WHERE user_id = ? AND deadline IS NOT NULL AND datetime(deadline) <= datetime('now', ?)
+        ORDER BY deadline ASC
+        LIMIT 100
+      `,
+      args: [userId, `+${safeDays} day`],
+    }),
+    db.execute({
+      sql: `
+        SELECT a.id, a.household_id AS householdId, a.title, a.amount, a.createdAt
+        FROM household_approvals a
+        WHERE a.requester_user_id = ? AND a.status = 'pending'
+        ORDER BY a.createdAt ASC
+        LIMIT 100
+      `,
+      args: [userId],
+    }),
+  ]);
+
+  const events = [
+    ...upcomingBills.map((b) => ({
+      type: 'bill',
+      date: b.nextDueDate,
+      title: b.name,
+      amount: Number(b.amount || 0),
+      meta: { dueDay: b.due_day, monthKey },
+    })),
+    ...recurring.rows.map((r) => ({
+      type: 'recurring',
+      date: r.nextDate,
+      title: r.title,
+      amount: Number(r.amount || 0),
+      meta: { frequency: r.frequency, category: r.category },
+    })),
+    ...goals.rows.map((g) => ({
+      type: 'goal-deadline',
+      date: g.deadline,
+      title: g.name,
+      amount: Number(Math.max(0, Number(g.targetAmount || 0) - Number(g.currentAmount || 0)).toFixed(2)),
+      meta: { remaining: Math.max(0, Number(g.targetAmount || 0) - Number(g.currentAmount || 0)) },
+    })),
+    ...approvals.rows.map((a) => ({
+      type: 'approval-pending',
+      date: a.createdAt,
+      title: a.title,
+      amount: Number(a.amount || 0),
+      meta: { householdId: a.householdId },
+    })),
+  ]
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  return {
+    horizonDays: safeDays,
+    monthKey,
+    events,
+  };
 };
 
 const listNetWorthItems = async (userId, query = {}) => {
@@ -1141,6 +1485,68 @@ const decideHouseholdApproval = async (userId, approvalId, decision, note = '') 
   return updated.rows[0];
 };
 
+const listApprovalComments = async (userId, approvalId) => {
+  const approval = await db.execute({
+    sql: 'SELECT id, household_id AS householdId FROM household_approvals WHERE id = ? LIMIT 1',
+    args: [approvalId],
+  });
+  const row = approval.rows[0];
+  if (!row) throw new Error('Approval request not found.');
+
+  const membership = await getHouseholdMembership(row.householdId, userId);
+  if (!membership || !membership.role) throw new Error('Household not found or inaccessible.');
+
+  const comments = await db.execute({
+    sql: `
+      SELECT c.id, c.comment, c.createdAt, c.user_id AS userId, u.username
+      FROM household_approval_comments c
+      INNER JOIN users u ON u.id = c.user_id
+      WHERE c.approval_id = ?
+      ORDER BY c.createdAt ASC, c.id ASC
+    `,
+    args: [approvalId],
+  });
+
+  return { items: comments.rows };
+};
+
+const addApprovalComment = async (userId, approvalId, comment) => {
+  const approval = await db.execute({
+    sql: 'SELECT id, household_id AS householdId FROM household_approvals WHERE id = ? LIMIT 1',
+    args: [approvalId],
+  });
+  const row = approval.rows[0];
+  if (!row) throw new Error('Approval request not found.');
+
+  const membership = await getHouseholdMembership(row.householdId, userId);
+  if (!membership || !membership.role) throw new Error('Household not found or inaccessible.');
+
+  const insert = await db.execute({
+    sql: `
+      INSERT INTO household_approval_comments (approval_id, household_id, user_id, comment)
+      VALUES (?, ?, ?, ?)
+    `,
+    args: [approvalId, row.householdId, userId, String(comment || '').slice(0, 500)],
+  });
+
+  await logActivity(userId, 'next-level', 'create', 'household-approval-comment', Number(insert.lastInsertRowid), {
+    approvalId,
+  });
+
+  const created = await db.execute({
+    sql: `
+      SELECT c.id, c.comment, c.createdAt, c.user_id AS userId, u.username
+      FROM household_approval_comments c
+      INNER JOIN users u ON u.id = c.user_id
+      WHERE c.id = ?
+      LIMIT 1
+    `,
+    args: [Number(insert.lastInsertRowid)],
+  });
+
+  return created.rows[0] || null;
+};
+
 const listActivityTimeline = async (userId, query = {}) => {
   const { page, limit, offset } = getPagination(query);
   const where = ['user_id = ?'];
@@ -1267,6 +1673,8 @@ const getTaxSummary = async (userId, year) => {
   });
 
   const deductibleHeuristics = ['medical', 'health', 'education', 'charity', 'donation', 'tax', 'insurance', 'business'];
+  const section80CHeuristics = ['ppf', 'elss', 'life insurance', 'epf', 'nsc', 'tuition'];
+  const hraHeuristics = ['rent', 'house rent', 'hra'];
 
   const rows = result.rows.map((r) => ({
     category: r.category,
@@ -1274,10 +1682,24 @@ const getTaxSummary = async (userId, year) => {
     likelyDeductible: deductibleHeuristics.some((h) => String(r.category || '').toLowerCase().includes(h)),
   }));
 
+  const estimatedDeductibleTotal = Number(rows.filter((r) => r.likelyDeductible).reduce((a, r) => a + r.total, 0).toFixed(2));
+  const section80CEstimate = Number(rows.filter((r) => section80CHeuristics.some((h) => String(r.category || '').toLowerCase().includes(h))).reduce((a, r) => a + r.total, 0).toFixed(2));
+  const hraEstimate = Number(rows.filter((r) => hraHeuristics.some((h) => String(r.category || '').toLowerCase().includes(h))).reduce((a, r) => a + r.total, 0).toFixed(2));
+
   return {
     year: safeYear,
     categories: rows,
-    estimatedDeductibleTotal: Number(rows.filter((r) => r.likelyDeductible).reduce((a, r) => a + r.total, 0).toFixed(2)),
+    estimatedDeductibleTotal,
+    indiaTrackers: {
+      section80C: {
+        estimate: section80CEstimate,
+        cap: 150000,
+        remainingCap: Number(Math.max(0, 150000 - section80CEstimate).toFixed(2)),
+      },
+      hra: {
+        rentTaggedSpend: hraEstimate,
+      },
+    },
   };
 };
 
@@ -1304,6 +1726,108 @@ const getGoalOptimizer = async (userId) => {
   return { recommendations };
 };
 
+const listGoalAutopilotRules = async (userId) => {
+  const rows = await db.execute({
+    sql: `
+      SELECT r.*, g.name AS goalName
+      FROM goal_autopilot_rules r
+      LEFT JOIN goals g ON g.id = r.goal_id
+      WHERE r.user_id = ?
+      ORDER BY r.updatedAt DESC, r.id DESC
+    `,
+    args: [userId],
+  });
+  return { items: rows.rows };
+};
+
+const upsertGoalAutopilotRule = async (userId, payload = {}) => {
+  const id = Number(payload.id || 0);
+  const args = [
+    userId,
+    payload.goalId ? Number(payload.goalId) : null,
+    String(payload.name || 'Auto Rule').slice(0, 100),
+    String(payload.ruleType || 'payday_percent'),
+    Number(payload.ruleValue || 0),
+    payload.enabled === false ? 0 : 1,
+  ];
+
+  if (id > 0) {
+    await db.execute({
+      sql: `
+        UPDATE goal_autopilot_rules
+        SET goal_id = ?, name = ?, rule_type = ?, rule_value = ?, enabled = ?, updatedAt = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+      `,
+      args: [args[1], args[2], args[3], args[4], args[5], id, userId],
+    });
+    const updated = await db.execute({ sql: 'SELECT * FROM goal_autopilot_rules WHERE id = ? AND user_id = ?', args: [id, userId] });
+    await logActivity(userId, 'next-level', 'update', 'goal-autopilot-rule', id, { ruleType: args[3] });
+    return updated.rows[0];
+  }
+
+  const created = await db.execute({
+    sql: `
+      INSERT INTO goal_autopilot_rules (user_id, goal_id, name, rule_type, rule_value, enabled)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    args,
+  });
+
+  await logActivity(userId, 'next-level', 'create', 'goal-autopilot-rule', Number(created.lastInsertRowid), { ruleType: args[3] });
+  const inserted = await db.execute({ sql: 'SELECT * FROM goal_autopilot_rules WHERE id = ?', args: [Number(created.lastInsertRowid)] });
+  return inserted.rows[0];
+};
+
+const deleteGoalAutopilotRule = async (userId, id) => {
+  await db.execute({ sql: 'DELETE FROM goal_autopilot_rules WHERE id = ? AND user_id = ?', args: [id, userId] });
+  await logActivity(userId, 'next-level', 'delete', 'goal-autopilot-rule', id, {});
+  return { id };
+};
+
+const projectGoalAutopilot = async (userId) => {
+  const [rules, goals, income] = await Promise.all([
+    listGoalAutopilotRules(userId),
+    db.execute({ sql: 'SELECT id, name, target_amount AS targetAmount, current_amount AS currentAmount, deadline FROM goals WHERE user_id = ?', args: [userId] }),
+    db.execute({
+      sql: `
+        SELECT COALESCE(AVG(amount), 0) AS avgIncome
+        FROM transactions
+        WHERE user_id = ? AND type = 'income' AND date >= datetime('now', '-90 day')
+      `,
+      args: [userId],
+    }),
+  ]);
+
+  const avgIncome = Number(income.rows[0]?.avgIncome || 0);
+  const enabledRules = (rules.items || []).filter((r) => Number(r.enabled) === 1);
+
+  const estimatedMonthlyContribution = enabledRules.reduce((sum, r) => {
+    if (r.rule_type === 'payday_percent') return sum + (avgIncome * (Number(r.rule_value || 0) / 100));
+    if (r.rule_type === 'roundup') return sum + Number(r.rule_value || 0) * 20;
+    if (r.rule_type === 'threshold_sweep') return sum + Number(r.rule_value || 0);
+    return sum;
+  }, 0);
+
+  const projections = goals.rows.map((g) => {
+    const remaining = Math.max(0, Number(g.targetAmount || 0) - Number(g.currentAmount || 0));
+    const monthsToGoal = estimatedMonthlyContribution > 0 ? Math.ceil(remaining / estimatedMonthlyContribution) : null;
+    return {
+      goalId: g.id,
+      goalName: g.name,
+      remaining: Number(remaining.toFixed(2)),
+      estimatedMonthlyContribution: Number(estimatedMonthlyContribution.toFixed(2)),
+      estimatedMonthsToGoal: monthsToGoal,
+    };
+  });
+
+  return {
+    avgIncome: Number(avgIncome.toFixed(2)),
+    enabledRuleCount: enabledRules.length,
+    estimatedMonthlyContribution: Number(estimatedMonthlyContribution.toFixed(2)),
+    projections,
+  };
+};
+
 const getExecutiveBrief = async (userId) => {
   const [copilot, forecast, subscriptions, anomalies, netWorth, health] = await Promise.all([
     getCopilotSummary(userId),
@@ -1327,11 +1851,74 @@ const getExecutiveBrief = async (userId) => {
   };
 };
 
+const getWeeklyCfoBrief = async (userId) => {
+  const weekKey = getWeekKey();
+  const existing = await db.execute({
+    sql: 'SELECT brief_json AS briefJson FROM weekly_cfo_briefs WHERE user_id = ? AND week_key = ? LIMIT 1',
+    args: [userId, weekKey],
+  });
+
+  if (existing.rows[0]?.briefJson) {
+    try {
+      return JSON.parse(existing.rows[0].briefJson);
+    } catch {
+      // continue to recompute
+    }
+  }
+
+  const [copilot, forecast, subscriptions, anomalies, health] = await Promise.all([
+    getCopilotSummary(userId),
+    getCashflowForecast(userId, 1),
+    getSubscriptionsInsights(userId),
+    getAnomalies(userId),
+    getFinancialHealthScore(userId),
+  ]);
+
+  const actionable = [];
+  if (forecast.averageMonthlyNet < 0) actionable.push('Reduce discretionary spend by 10% this week to move net cashflow positive.');
+  if ((subscriptions.summary?.unusedCandidateCount || 0) > 0) actionable.push(`Review ${subscriptions.summary.unusedCandidateCount} unused subscription candidate(s) and cancel non-essential ones.`);
+  if ((anomalies.anomalies || []).length > 0) actionable.push('Confirm large flagged transactions and mark expected ones to reduce false alerts.');
+  if (health.score < 60) actionable.push('Prioritize debt reduction and automate a small weekly transfer toward emergency savings.');
+  if (actionable.length === 0) actionable.push('Maintain current course and increase goal contribution by 5% this week.');
+
+  const brief = {
+    weekKey,
+    generatedAt: new Date().toISOString(),
+    snapshot: {
+      net: Number(copilot?.stats?.net || 0),
+      savingsRate: Number(health?.metrics?.savingsRate || 0),
+      healthScore: Number(health?.score || 0),
+      anomalyCount: (anomalies.anomalies || []).length,
+      subscriptionLeak: Number(subscriptions.summary?.estimatedMonthlyImpact || 0),
+    },
+    recommendations: actionable.slice(0, 3),
+  };
+
+  await db.execute({
+    sql: `
+      INSERT INTO weekly_cfo_briefs (user_id, week_key, brief_json)
+      VALUES (?, ?, ?)
+      ON CONFLICT(user_id, week_key)
+      DO UPDATE SET brief_json = excluded.brief_json
+    `,
+    args: [userId, weekKey, JSON.stringify(brief)],
+  });
+
+  await logActivity(userId, 'next-level', 'create', 'weekly-cfo-brief', null, { weekKey });
+
+  return brief;
+};
+
 module.exports = {
   getCopilotSummary,
   getCashflowForecast,
   getAnomalies,
+  submitAnomalyFeedback,
   getSubscriptionsInsights,
+  parseReceiptOcr,
+  simulateCashflowWhatIf,
+  getDebtPayoffPlan,
+  getFinancialCalendar,
   listNetWorthItems,
   upsertNetWorthItem,
   deleteNetWorthItem,
@@ -1355,7 +1942,12 @@ module.exports = {
   verifyActivityIntegrity,
   getTaxSummary,
   getGoalOptimizer,
+  listGoalAutopilotRules,
+  upsertGoalAutopilotRule,
+  deleteGoalAutopilotRule,
+  projectGoalAutopilot,
   getExecutiveBrief,
+  getWeeklyCfoBrief,
   getFinancialHealthScore,
   getAutoCategorySuggestions,
   submitAutoCategoryFeedback,
@@ -1365,4 +1957,6 @@ module.exports = {
   createHouseholdApprovalRequest,
   listHouseholdApprovals,
   decideHouseholdApproval,
+  listApprovalComments,
+  addApprovalComment,
 };

@@ -24,6 +24,10 @@ const forecastQuerySchema = z.object({
 	months: z.coerce.number().int().min(1).max(36).optional(),
 });
 
+const calendarQuerySchema = z.object({
+	days: z.coerce.number().int().min(1).max(120).optional(),
+});
+
 const taxQuerySchema = z.object({
 	year: z.coerce.number().int().min(2000).max(2100).optional(),
 });
@@ -132,11 +136,58 @@ const householdApprovalDecisionSchema = z.object({
 	note: z.string().trim().max(300).optional(),
 });
 
+const anomalyFeedbackSchema = z.object({
+	transactionId: z.coerce.number().int().positive().optional(),
+	titlePattern: z.string().trim().max(120).optional(),
+	amount: z.coerce.number().optional(),
+	action: z.enum(['expected', 'ignore']).default('expected'),
+});
+
+const receiptOcrSchema = z.object({
+	rawText: z.string().trim().min(1).max(10000),
+});
+
+const whatIfScenarioSchema = z.object({
+	months: z.coerce.number().int().min(1).max(36).optional(),
+	sipIncrease: z.coerce.number().min(0).optional(),
+	rentIncreasePct: z.coerce.number().min(0).max(100).optional(),
+	oneTimeExpense: z.coerce.number().min(0).optional(),
+});
+
+const debtPlanSchema = z.object({
+	strategy: z.enum(['snowball', 'avalanche']).optional(),
+	extraPayment: z.coerce.number().min(0).optional(),
+	debts: z.array(z.object({
+		name: z.string().trim().min(1).max(100),
+		balance: z.coerce.number().nonnegative(),
+		apr: z.coerce.number().min(0).max(200),
+		minPayment: z.coerce.number().nonnegative(),
+	})).max(30).optional(),
+});
+
+const goalAutopilotRuleSchema = z.object({
+	id: z.coerce.number().int().positive().optional(),
+	goalId: z.coerce.number().int().positive().optional().nullable(),
+	name: z.string().trim().min(1).max(100),
+	ruleType: z.enum(['roundup', 'payday_percent', 'threshold_sweep']),
+	ruleValue: z.coerce.number().min(0),
+	enabled: z.boolean().optional(),
+});
+
+const approvalCommentSchema = z.object({
+	comment: z.string().trim().min(1).max(500),
+});
+
 // 12-feature pack endpoints
 router.get('/copilot/summary', controller.getCopilotSummary);
 router.get('/cashflow/forecast', validate(forecastQuerySchema, 'query'), controller.getCashflowForecast);
+router.post('/cashflow/what-if', validate(whatIfScenarioSchema), controller.simulateCashflowWhatIf);
+router.get('/calendar/events', validate(calendarQuerySchema, 'query'), controller.getFinancialCalendar);
 router.get('/transactions/anomalies', controller.getAnomalies);
+router.post('/transactions/anomalies/feedback', validate(anomalyFeedbackSchema), controller.submitAnomalyFeedback);
 router.get('/subscriptions/insights', controller.getSubscriptions);
+router.post('/receipts/ocr', validate(receiptOcrSchema), controller.parseReceiptOcr);
+router.post('/debt/payoff-plan', validate(debtPlanSchema), controller.getDebtPayoffPlan);
 
 router.get('/networth', validate(paginationQuerySchema, 'query'), controller.listNetWorth);
 router.post('/networth', validate(netWorthUpsertSchema), controller.upsertNetWorth);
@@ -166,7 +217,12 @@ router.post('/households/join', validate(householdJoinSchema), controller.joinHo
 
 router.get('/tax/summary', validate(taxQuerySchema, 'query'), controller.getTaxSummary);
 router.get('/goals/optimizer', controller.getGoalOptimizer);
+router.get('/goals/autopilot/rules', controller.listGoalAutopilotRules);
+router.post('/goals/autopilot/rules', validate(goalAutopilotRuleSchema), controller.upsertGoalAutopilotRule);
+router.delete('/goals/autopilot/rules/:id', validate(idParamSchema, 'params'), controller.deleteGoalAutopilotRule);
+router.get('/goals/autopilot/projection', controller.projectGoalAutopilot);
 router.get('/executive/brief', controller.getExecutiveBrief);
+router.get('/reports/weekly-brief', controller.getWeeklyCfoBrief);
 router.get('/health/score', controller.getFinancialHealthScore);
 router.get('/autocategory/suggest', validate(autoCategoryQuerySchema, 'query'), controller.getAutoCategorySuggestions);
 router.post('/autocategory/feedback', validate(categoryFeedbackSchema), controller.submitAutoCategoryFeedback);
@@ -181,6 +237,8 @@ router.put('/households/:id/limits/:memberId', validate(z.object({
 router.post('/households/approvals', validate(householdApprovalCreateSchema), controller.createHouseholdApprovalRequest);
 router.get('/households/:id/approvals', validate(idParamSchema, 'params'), validate(z.object({ status: z.enum(['pending', 'approved', 'rejected']).optional() }), 'query'), controller.listHouseholdApprovals);
 router.patch('/households/approvals/:approvalId', validate(z.object({ approvalId: z.coerce.number().int().positive() }), 'params'), validate(householdApprovalDecisionSchema), controller.decideHouseholdApproval);
+router.get('/households/approvals/:approvalId/comments', validate(z.object({ approvalId: z.coerce.number().int().positive() }), 'params'), controller.listApprovalComments);
+router.post('/households/approvals/:approvalId/comments', validate(z.object({ approvalId: z.coerce.number().int().positive() }), 'params'), validate(approvalCommentSchema), controller.addApprovalComment);
 
 router.get('/activity', validate(activityQuerySchema, 'query'), controller.listActivityTimeline);
 router.get('/activity/export', validate(activityQuerySchema, 'query'), controller.exportActivityTimeline);
