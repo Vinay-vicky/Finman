@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, lazy, Suspense, useCallback } f
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Navigation from './components/Navigation';
 import AnimatedBackground from './components/AnimatedBackground';
+import INRLoader from './components/INRLoader';
 import { AuthContext } from './context/AuthContext';
 import { apiRequest } from './services/api';
 
@@ -126,7 +127,7 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <AnimatedBackground />
-        <div className="text-slate-400 animate-pulse text-lg">Loading...</div>
+        <INRLoader label="Loading your workspace..." size="lg" />
       </div>
     );
   }
@@ -143,7 +144,7 @@ function App() {
         </header>
         
         <div className="w-full max-w-md">
-          <Suspense fallback={<div className="text-slate-400 animate-pulse text-center">Loading auth form...</div>}>
+          <Suspense fallback={<INRLoader label="Loading auth form..." size="sm" compact />}>
             {showLogin ? (
               <Login onSwitch={() => setShowLogin(false)} />
             ) : (
@@ -164,10 +165,10 @@ function App() {
         <main className="flex-1 w-full min-w-0 pb-20 md:pb-8">
           {loading ? (
              <div className="flex items-center justify-center h-64">
-               <h2 className="text-slate-400 animate-pulse text-lg">Loading your data...</h2>
+               <INRLoader label="Loading your data..." size="md" />
              </div>
           ) : (
-            <Suspense fallback={<div className="text-slate-400 animate-pulse text-center py-10">Loading page...</div>}>
+            <Suspense fallback={<div className="py-10"><INRLoader label="Loading page..." size="sm" compact /></div>}>
               <div className="animate-fade-in">
                 <Routes>
                   <Route path="/" element={

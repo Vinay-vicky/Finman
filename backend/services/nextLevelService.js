@@ -17,6 +17,31 @@ const toPaginated = (items, total, page, limit) => ({
   totalPages: Math.max(1, Math.ceil(total / limit)),
 });
 
+const norm = (v) => String(v || '').trim().toLowerCase();
+
+const daysDiff = (dateA, dateB) => {
+  const a = new Date(dateA);
+  const b = new Date(dateB);
+  const ms = Math.abs(a.getTime() - b.getTime());
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+};
+
+const getHouseholdMembership = async (householdId, userId) => {
+  const result = await db.execute({
+    sql: `
+      SELECT h.id AS householdId,
+             h.owner_user_id AS ownerUserId,
+             COALESCE(hm.role, CASE WHEN h.owner_user_id = ? THEN 'owner' ELSE NULL END) AS role
+      FROM households h
+      LEFT JOIN household_members hm ON hm.household_id = h.id AND hm.user_id = ?
+      WHERE h.id = ?
+      LIMIT 1
+    `,
+    args: [userId, userId, householdId],
+  });
+  return result.rows[0] || null;
+};
+
 const logActivity = async (userId, area, action, entityType, entityId, payload = {}) => {
   try {
     const payloadJson = JSON.stringify(payload || {});
@@ -130,10 +155,254 @@ const getCashflowForecast = async (userId, months = 6) => {
     });
   }
 
+  let daysToZero = null;
+  let zeroBalanceDate = null;
+  if (currentBalance > 0 && avgNet < 0) {
+    daysToZero = Math.max(0, Math.floor(currentBalance / Math.abs(avgNet) * 30));
+    const zeroDate = new Date();
+    zeroDate.setDate(zeroDate.getDate() + daysToZero);
+    zeroBalanceDate = zeroDate.toISOString().slice(0, 10);
+  }
+
+  const riskLevel = avgNet >= 0
+    ? 'low'
+    : (daysToZero !== null && daysToZero <= 45 ? 'high' : 'medium');
+
   return {
     averageMonthlyNet: Number(avgNet.toFixed(2)),
     currentBalance: Number(currentBalance.toFixed(2)),
     projection,
+    daysToZero,
+    zeroBalanceDate,
+    riskLevel,
+  };
+};
+
+const getFinancialHealthScore = async (userId) => {
+  const [summary, goals, netWorth] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT
+          COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS income,
+          COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS expense
+        FROM transactions
+        WHERE user_id = ?
+      `,
+      args: [userId],
+    }),
+    db.execute({
+      sql: 'SELECT COALESCE(SUM(target_amount - current_amount), 0) AS goalsRemaining FROM goals WHERE user_id = ?',
+      args: [userId],
+    }),
+    db.execute({
+      sql: `
+        SELECT
+          COALESCE(SUM(CASE WHEN kind = 'asset' THEN value ELSE 0 END), 0) AS assets,
+          COALESCE(SUM(CASE WHEN kind = 'liability' THEN value ELSE 0 END), 0) AS liabilities
+        FROM net_worth_items
+        WHERE user_id = ?
+      `,
+      args: [userId],
+    }),
+  ]);
+
+  const income = toNumber(summary.rows[0]?.income);
+  const expense = toNumber(summary.rows[0]?.expense);
+  const savingsRate = income > 0 ? Math.max(0, (income - expense) / income) : 0;
+  const assets = toNumber(netWorth.rows[0]?.assets);
+  const liabilities = toNumber(netWorth.rows[0]?.liabilities);
+  const debtRatio = assets > 0 ? liabilities / assets : (liabilities > 0 ? 1 : 0);
+  const goalsRemaining = Math.max(0, toNumber(goals.rows[0]?.goalsRemaining));
+
+  const scoreSavings = Math.min(40, Math.round(savingsRate * 100));
+  const scoreDebt = Math.max(0, Math.min(35, Math.round((1 - debtRatio) * 35)));
+  const scoreNetWorth = Math.min(15, assets > liabilities ? 15 : Math.round((assets / Math.max(liabilities, 1)) * 15));
+  const scoreGoals = Math.min(10, goalsRemaining === 0 ? 10 : Math.max(0, 10 - Math.round(Math.log10(goalsRemaining + 1) * 4)));
+
+  const score = Math.max(0, Math.min(100, scoreSavings + scoreDebt + scoreNetWorth + scoreGoals));
+
+  return {
+    score,
+    band: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'fair' : 'needs-attention',
+    metrics: {
+      income: Number(income.toFixed(2)),
+      expense: Number(expense.toFixed(2)),
+      savingsRate: Number((savingsRate * 100).toFixed(2)),
+      debtRatio: Number((debtRatio * 100).toFixed(2)),
+      assets: Number(assets.toFixed(2)),
+      liabilities: Number(liabilities.toFixed(2)),
+      goalsRemaining: Number(goalsRemaining.toFixed(2)),
+    },
+    breakdown: {
+      savingsDiscipline: scoreSavings,
+      debtManagement: scoreDebt,
+      netWorthStrength: scoreNetWorth,
+      goalProgress: scoreGoals,
+    },
+  };
+};
+
+const getAutoCategorySuggestions = async (userId, title, amount = 0) => {
+  const cleanTitle = norm(title);
+  if (!cleanTitle) return { suggestions: [] };
+
+  const [exactMatches, containsMatches, feedback, rulesResult] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT category, COUNT(*) AS uses
+        FROM transactions
+        WHERE user_id = ? AND type = 'expense' AND LOWER(TRIM(title)) = ?
+        GROUP BY category
+        ORDER BY uses DESC
+        LIMIT 5
+      `,
+      args: [userId, cleanTitle],
+    }),
+    db.execute({
+      sql: `
+        SELECT category, COUNT(*) AS uses
+        FROM transactions
+        WHERE user_id = ? AND type = 'expense' AND LOWER(title) LIKE ?
+        GROUP BY category
+        ORDER BY uses DESC
+        LIMIT 5
+      `,
+      args: [userId, `%${cleanTitle.split(' ')[0]}%`],
+    }),
+    db.execute({
+      sql: `
+        SELECT selected_category AS category, COUNT(*) AS uses
+        FROM category_feedback
+        WHERE user_id = ? AND LOWER(input_title) = ?
+        GROUP BY selected_category
+        ORDER BY uses DESC
+        LIMIT 5
+      `,
+      args: [userId, cleanTitle],
+    }),
+    listRules(userId, { page: 1, limit: 100 }),
+  ]);
+
+  const scoreMap = new Map();
+  const addScore = (category, points, source) => {
+    if (!category) return;
+    const curr = scoreMap.get(category) || { category, score: 0, reasons: [] };
+    curr.score += points;
+    curr.reasons.push(source);
+    scoreMap.set(category, curr);
+  };
+
+  exactMatches.rows.forEach((r) => addScore(r.category, 60 + Number(r.uses || 0) * 3, 'exact-history'));
+  containsMatches.rows.forEach((r) => addScore(r.category, 30 + Number(r.uses || 0) * 2, 'similar-history'));
+  feedback.rows.forEach((r) => addScore(r.category, 80 + Number(r.uses || 0) * 4, 'user-feedback'));
+
+  const sample = { title, amount: Number(amount || 0), type: 'expense', category: 'Other' };
+  const sim = await simulateRules(userId, sample);
+  if (sim?.transformed?.category && sim.transformed.category !== 'Other') {
+    addScore(sim.transformed.category, 70, 'rule-engine');
+  }
+
+  const suggestions = [...scoreMap.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((s) => ({
+      category: s.category,
+      confidence: Math.min(0.99, Number((s.score / 160).toFixed(2))),
+      reasons: s.reasons,
+    }));
+
+  return {
+    title,
+    amount: Number(amount || 0),
+    suggestions,
+    suggested: suggestions[0]?.category || null,
+  };
+};
+
+const submitAutoCategoryFeedback = async (userId, payload = {}) => {
+  await db.execute({
+    sql: `
+      INSERT INTO category_feedback (user_id, input_title, suggested_category, selected_category, confidence, source)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    args: [
+      userId,
+      String(payload.inputTitle || ''),
+      payload.suggestedCategory || null,
+      String(payload.selectedCategory || ''),
+      Number(payload.confidence || 0),
+      payload.source || 'manual-feedback',
+    ],
+  });
+
+  await logActivity(userId, 'next-level', 'create', 'autocategory-feedback', null, {
+    inputTitle: payload.inputTitle,
+    selectedCategory: payload.selectedCategory,
+  });
+
+  return { success: true };
+};
+
+const reconcileStatementRows = async (userId, payload = {}) => {
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const sourceLabel = String(payload.sourceLabel || 'manual-upload').slice(0, 100);
+  if (rows.length === 0) {
+    return { total: 0, duplicates: [], newRows: [], summary: { duplicateRows: 0, newRows: 0 } };
+  }
+
+  const existing = await db.execute({
+    sql: 'SELECT id, title, amount, type, category, date FROM transactions WHERE user_id = ? ORDER BY date DESC LIMIT 5000',
+    args: [userId],
+  });
+
+  const duplicates = [];
+  const newRows = [];
+
+  for (const row of rows) {
+    const rTitle = norm(row.title);
+    const rAmount = Number(row.amount || 0);
+    const rType = String(row.type || 'expense');
+    const rDate = row.date ? new Date(row.date).toISOString() : null;
+
+    const match = existing.rows.find((tx) => {
+      const titleClose = norm(tx.title) === rTitle || norm(tx.title).includes(rTitle) || rTitle.includes(norm(tx.title));
+      const amountClose = Math.abs(Number(tx.amount || 0) - rAmount) < 0.01;
+      const typeClose = String(tx.type || '') === rType;
+      const dateClose = rDate ? daysDiff(tx.date, rDate) <= 2 : true;
+      return titleClose && amountClose && typeClose && dateClose;
+    });
+
+    if (match) {
+      duplicates.push({ input: row, matchedTransaction: match });
+    } else {
+      newRows.push(row);
+    }
+  }
+
+  await db.execute({
+    sql: `
+      INSERT INTO statement_reconciliations (user_id, source_label, total_rows, duplicate_rows, new_rows, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    args: [userId, sourceLabel, rows.length, duplicates.length, newRows.length, JSON.stringify({ rows, duplicates: duplicates.length, newRows: newRows.length })],
+  });
+
+  await logActivity(userId, 'next-level', 'create', 'statement-reconcile', null, {
+    sourceLabel,
+    totalRows: rows.length,
+    duplicates: duplicates.length,
+    newRows: newRows.length,
+  });
+
+  return {
+    total: rows.length,
+    duplicates,
+    newRows,
+    summary: {
+      duplicateRows: duplicates.length,
+      newRows: newRows.length,
+      duplicateRate: Number(((duplicates.length / rows.length) * 100).toFixed(2)),
+    },
   };
 };
 
@@ -727,6 +996,151 @@ const joinHouseholdByInvite = async (userId, inviteCode) => {
   return h;
 };
 
+const setHouseholdSpendingLimit = async (userId, householdId, memberUserId, monthlyLimit) => {
+  const membership = await getHouseholdMembership(householdId, userId);
+  if (!membership || !membership.role) throw new Error('Household not found or inaccessible.');
+  if (membership.role !== 'owner') throw new Error('Only household owner can set spending limits.');
+
+  await db.execute({
+    sql: `
+      INSERT INTO household_spending_limits (household_id, user_id, monthly_limit, created_by, updatedAt)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(household_id, user_id)
+      DO UPDATE SET monthly_limit = excluded.monthly_limit, created_by = excluded.created_by, updatedAt = CURRENT_TIMESTAMP
+    `,
+    args: [householdId, memberUserId, Number(monthlyLimit || 0), userId],
+  });
+
+  await logActivity(userId, 'next-level', 'update', 'household-limit', householdId, {
+    memberUserId,
+    monthlyLimit: Number(monthlyLimit || 0),
+  });
+
+  return { success: true };
+};
+
+const listHouseholdSpendingLimits = async (userId, householdId) => {
+  const membership = await getHouseholdMembership(householdId, userId);
+  if (!membership || !membership.role) throw new Error('Household not found or inaccessible.');
+
+  const rows = await db.execute({
+    sql: `
+      SELECT l.id, l.household_id AS householdId, l.user_id AS userId, l.monthly_limit AS monthlyLimit, l.updatedAt,
+             u.username
+      FROM household_spending_limits l
+      INNER JOIN users u ON u.id = l.user_id
+      WHERE l.household_id = ?
+      ORDER BY u.username ASC
+    `,
+    args: [householdId],
+  });
+
+  return { items: rows.rows };
+};
+
+const createHouseholdApprovalRequest = async (userId, payload = {}) => {
+  const householdId = Number(payload.householdId || 0);
+  const membership = await getHouseholdMembership(householdId, userId);
+  if (!membership || !membership.role) throw new Error('Household not found or inaccessible.');
+
+  const insert = await db.execute({
+    sql: `
+      INSERT INTO household_approvals (household_id, requester_user_id, amount, title, category, note, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending')
+    `,
+    args: [
+      householdId,
+      userId,
+      Number(payload.amount || 0),
+      String(payload.title || '').slice(0, 200),
+      payload.category ? String(payload.category).slice(0, 50) : null,
+      payload.note ? String(payload.note).slice(0, 300) : null,
+    ],
+  });
+
+  const id = Number(insert.lastInsertRowid);
+  const created = await db.execute({
+    sql: 'SELECT * FROM household_approvals WHERE id = ?',
+    args: [id],
+  });
+
+  await logActivity(userId, 'next-level', 'create', 'household-approval', id, {
+    householdId,
+    amount: Number(payload.amount || 0),
+    title: payload.title,
+  });
+
+  return created.rows[0];
+};
+
+const listHouseholdApprovals = async (userId, householdId, status = '') => {
+  const membership = await getHouseholdMembership(householdId, userId);
+  if (!membership || !membership.role) throw new Error('Household not found or inaccessible.');
+
+  const args = [householdId];
+  let where = 'a.household_id = ?';
+  if (status) {
+    where += ' AND a.status = ?';
+    args.push(status);
+  }
+
+  const rows = await db.execute({
+    sql: `
+      SELECT a.id, a.household_id AS householdId, a.requester_user_id AS requesterUserId,
+             a.amount, a.title, a.category, a.note, a.status, a.decided_by AS decidedBy,
+             a.decided_note AS decidedNote, a.decided_at AS decidedAt, a.createdAt,
+             ru.username AS requesterUsername,
+             du.username AS decidedByUsername
+      FROM household_approvals a
+      INNER JOIN users ru ON ru.id = a.requester_user_id
+      LEFT JOIN users du ON du.id = a.decided_by
+      WHERE ${where}
+      ORDER BY a.createdAt DESC, a.id DESC
+      LIMIT 100
+    `,
+    args,
+  });
+
+  return { items: rows.rows, role: membership.role };
+};
+
+const decideHouseholdApproval = async (userId, approvalId, decision, note = '') => {
+  const approval = await db.execute({
+    sql: 'SELECT * FROM household_approvals WHERE id = ? LIMIT 1',
+    args: [approvalId],
+  });
+  const row = approval.rows[0];
+  if (!row) throw new Error('Approval request not found.');
+  if (row.status !== 'pending') throw new Error('Approval request already decided.');
+
+  const membership = await getHouseholdMembership(row.household_id, userId);
+  if (!membership || !membership.role) throw new Error('Household not found or inaccessible.');
+  if (!['owner', 'editor'].includes(membership.role)) {
+    throw new Error('Only household owner/editor can decide approvals.');
+  }
+
+  await db.execute({
+    sql: `
+      UPDATE household_approvals
+      SET status = ?, decided_by = ?, decided_note = ?, decided_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `,
+    args: [decision, userId, note || null, approvalId],
+  });
+
+  const updated = await db.execute({
+    sql: 'SELECT * FROM household_approvals WHERE id = ? LIMIT 1',
+    args: [approvalId],
+  });
+
+  await logActivity(userId, 'next-level', 'update', 'household-approval', approvalId, {
+    decision,
+    note,
+  });
+
+  return updated.rows[0];
+};
+
 const listActivityTimeline = async (userId, query = {}) => {
   const { page, limit, offset } = getPagination(query);
   const where = ['user_id = ?'];
@@ -891,12 +1305,13 @@ const getGoalOptimizer = async (userId) => {
 };
 
 const getExecutiveBrief = async (userId) => {
-  const [copilot, forecast, subscriptions, anomalies, netWorth] = await Promise.all([
+  const [copilot, forecast, subscriptions, anomalies, netWorth, health] = await Promise.all([
     getCopilotSummary(userId),
     getCashflowForecast(userId, 3),
     getSubscriptionsInsights(userId),
     getAnomalies(userId),
     listNetWorthItems(userId),
+    getFinancialHealthScore(userId),
   ]);
 
   return {
@@ -907,6 +1322,7 @@ const getExecutiveBrief = async (userId) => {
       potentialSubscriptions: subscriptions.candidates.slice(0, 5),
       anomalyCount: anomalies.anomalies.length,
       netWorth: netWorth.totals.netWorth,
+      healthScore: health.score,
     },
   };
 };
@@ -940,4 +1356,13 @@ module.exports = {
   getTaxSummary,
   getGoalOptimizer,
   getExecutiveBrief,
+  getFinancialHealthScore,
+  getAutoCategorySuggestions,
+  submitAutoCategoryFeedback,
+  reconcileStatementRows,
+  setHouseholdSpendingLimit,
+  listHouseholdSpendingLimits,
+  createHouseholdApprovalRequest,
+  listHouseholdApprovals,
+  decideHouseholdApproval,
 };

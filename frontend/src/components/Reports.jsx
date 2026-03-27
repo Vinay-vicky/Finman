@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { FileText, Download } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { apiDownload, apiRequest } from '../services/api';
+import INRLoader from './INRLoader';
 
 const toInputDate = (date) => date.toISOString().slice(0, 10);
 
@@ -57,7 +58,7 @@ const Reports = () => {
   };
 
   if (loading) {
-    return <div className="text-slate-400 animate-pulse p-8">Loading reports...</div>;
+    return <div className="p-8"><INRLoader label="Loading reports..." size="md" compact /></div>;
   }
 
   if (error) {

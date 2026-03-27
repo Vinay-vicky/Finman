@@ -52,7 +52,7 @@ const Login = ({ onSwitch }) => {
       setOtpDevHint(data.devOtp || '');
       setOtpDeliveryProvider(data.deliveryProvider || '');
       if (data.deliveryProvider === 'mock') {
-        setOtpInfo('Server is currently using MOCK OTP provider. Real SMS may not be delivered in this mode.');
+        setOtpInfo('Server is using MOCK OTP provider. No real SMS is sent in this mode. Use Dev OTP below or configure Twilio in backend .env.');
       } else {
         setOtpInfo('OTP requested successfully. Please check your SMS inbox.');
       }

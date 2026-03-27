@@ -28,6 +28,11 @@ const taxQuerySchema = z.object({
 	year: z.coerce.number().int().min(2000).max(2100).optional(),
 });
 
+const autoCategoryQuerySchema = z.object({
+	title: z.string().trim().min(1).max(200),
+	amount: z.coerce.number().optional(),
+});
+
 const activityQuerySchema = z.object({
 	page: z.coerce.number().int().min(1).optional(),
 	limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -91,6 +96,42 @@ const householdMemberRoleSchema = z.object({
 	role: z.enum(['editor', 'viewer']),
 });
 
+const categoryFeedbackSchema = z.object({
+	inputTitle: z.string().trim().min(1).max(200),
+	suggestedCategory: z.string().trim().max(50).optional().nullable(),
+	selectedCategory: z.string().trim().min(1).max(50),
+	confidence: z.coerce.number().min(0).max(1).optional(),
+	source: z.string().trim().max(50).optional(),
+});
+
+const reconcileSchema = z.object({
+	sourceLabel: z.string().trim().max(100).optional(),
+	rows: z.array(z.object({
+		title: z.string().trim().min(1).max(200),
+		amount: z.coerce.number(),
+		type: z.enum(['income', 'expense']).optional(),
+		category: z.string().trim().max(50).optional(),
+		date: z.string().optional(),
+	})).max(500),
+});
+
+const householdLimitSchema = z.object({
+	monthlyLimit: z.coerce.number().min(0),
+});
+
+const householdApprovalCreateSchema = z.object({
+	householdId: z.coerce.number().int().positive(),
+	amount: z.coerce.number().positive(),
+	title: z.string().trim().min(1).max(200),
+	category: z.string().trim().max(50).optional(),
+	note: z.string().trim().max(300).optional(),
+});
+
+const householdApprovalDecisionSchema = z.object({
+	decision: z.enum(['approved', 'rejected']),
+	note: z.string().trim().max(300).optional(),
+});
+
 // 12-feature pack endpoints
 router.get('/copilot/summary', controller.getCopilotSummary);
 router.get('/cashflow/forecast', validate(forecastQuerySchema, 'query'), controller.getCashflowForecast);
@@ -126,6 +167,21 @@ router.post('/households/join', validate(householdJoinSchema), controller.joinHo
 router.get('/tax/summary', validate(taxQuerySchema, 'query'), controller.getTaxSummary);
 router.get('/goals/optimizer', controller.getGoalOptimizer);
 router.get('/executive/brief', controller.getExecutiveBrief);
+router.get('/health/score', controller.getFinancialHealthScore);
+router.get('/autocategory/suggest', validate(autoCategoryQuerySchema, 'query'), controller.getAutoCategorySuggestions);
+router.post('/autocategory/feedback', validate(categoryFeedbackSchema), controller.submitAutoCategoryFeedback);
+router.post('/statements/reconcile', validate(reconcileSchema), controller.reconcileStatementRows);
+
+router.get('/households/:id/limits', validate(idParamSchema, 'params'), controller.listHouseholdSpendingLimits);
+router.put('/households/:id/limits/:memberId', validate(z.object({
+	id: z.coerce.number().int().positive(),
+	memberId: z.coerce.number().int().positive(),
+}), 'params'), validate(householdLimitSchema), controller.setHouseholdSpendingLimit);
+
+router.post('/households/approvals', validate(householdApprovalCreateSchema), controller.createHouseholdApprovalRequest);
+router.get('/households/:id/approvals', validate(idParamSchema, 'params'), validate(z.object({ status: z.enum(['pending', 'approved', 'rejected']).optional() }), 'query'), controller.listHouseholdApprovals);
+router.patch('/households/approvals/:approvalId', validate(z.object({ approvalId: z.coerce.number().int().positive() }), 'params'), validate(householdApprovalDecisionSchema), controller.decideHouseholdApproval);
+
 router.get('/activity', validate(activityQuerySchema, 'query'), controller.listActivityTimeline);
 router.get('/activity/export', validate(activityQuerySchema, 'query'), controller.exportActivityTimeline);
 router.get('/activity/integrity', controller.verifyActivityIntegrity);

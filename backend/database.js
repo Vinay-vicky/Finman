@@ -176,6 +176,58 @@ const connectDB = async () => {
         user_agent TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
+      `CREATE TABLE IF NOT EXISTS category_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        input_title TEXT NOT NULL,
+        suggested_category TEXT,
+        selected_category TEXT NOT NULL,
+        confidence REAL DEFAULT 0,
+        source TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS statement_reconciliations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        source_label TEXT,
+        total_rows INTEGER DEFAULT 0,
+        duplicate_rows INTEGER DEFAULT 0,
+        new_rows INTEGER DEFAULT 0,
+        payload_json TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS household_spending_limits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        monthly_limit REAL NOT NULL,
+        created_by INTEGER NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(household_id, user_id),
+        FOREIGN KEY (household_id) REFERENCES households(id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (created_by) REFERENCES users(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS household_approvals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        requester_user_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT,
+        note TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+        decided_by INTEGER,
+        decided_note TEXT,
+        decided_at DATETIME,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (household_id) REFERENCES households(id),
+        FOREIGN KEY (requester_user_id) REFERENCES users(id),
+        FOREIGN KEY (decided_by) REFERENCES users(id)
+      )`,
     ], 'write');
 
     // Lightweight migrations for existing local/hosted DBs.
@@ -216,6 +268,11 @@ const connectDB = async () => {
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mobile_number ON users(mobile_number)`,
       `CREATE INDEX IF NOT EXISTS idx_mobile_otp_mobile_purpose_created ON mobile_otp_codes(mobile_number, purpose, createdAt DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_mobile_otp_expires_consumed ON mobile_otp_codes(expires_at, consumed_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_category_feedback_user_title_created ON category_feedback(user_id, input_title, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_statement_reconciliations_user_created ON statement_reconciliations(user_id, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_household_limits_household_user ON household_spending_limits(household_id, user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_household_approvals_household_status_created ON household_approvals(household_id, status, createdAt DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_household_approvals_requester_created ON household_approvals(requester_user_id, createdAt DESC)`,
     ];
 
     for (const sql of migrationStatements) {

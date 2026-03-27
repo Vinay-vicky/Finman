@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { Target, Flag, Trash2, Plus, AlertTriangle, Tags } from 'lucide-react';
 import { apiRequest } from '../services/api';
+import INRLoader from './INRLoader';
 
 const Budgets = () => {
   const { token } = useContext(AuthContext);
@@ -145,7 +146,7 @@ const Budgets = () => {
 
   if (loading) return (
     <div className="flex items-center justify-center p-10 h-64">
-      <h2 className="text-slate-400 animate-pulse text-lg">Loading targets...</h2>
+      <INRLoader label="Loading targets..." size="md" compact />
     </div>
   );
 

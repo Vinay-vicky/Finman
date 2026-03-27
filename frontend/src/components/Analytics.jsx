@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import { apiDownload, apiRequest } from '../services/api';
+import INRLoader from './INRLoader';
 
 const COLORS = ['#34d399', '#3b82f6', '#f87171', '#fbbf24', '#a78bfa', '#f472b6'];
 
@@ -92,7 +93,7 @@ const Analytics = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center p-10 h-64">
-        <h2 className="text-slate-400 animate-pulse text-lg">Loading analytics...</h2>
+        <INRLoader label="Loading analytics..." size="md" compact />
       </div>
     );
   }

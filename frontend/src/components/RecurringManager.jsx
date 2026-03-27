@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { Repeat, Plus, Trash2, Play, Pencil, PauseCircle, PlayCircle } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { apiRequest } from '../services/api';
+import INRLoader from './INRLoader';
 
 const RecurringManager = ({ onRefreshTransactions }) => {
   const { token } = useContext(AuthContext);
@@ -217,7 +218,9 @@ const RecurringManager = ({ onRefreshTransactions }) => {
       </form>
 
       {loading ? (
-        <p className="text-slate-400 text-sm">Loading recurring rules...</p>
+        <div className="py-2">
+          <INRLoader label="Loading recurring rules..." size="sm" compact />
+        </div>
       ) : items.length === 0 ? (
         <p className="text-slate-500 text-sm">No recurring rules yet.</p>
       ) : (

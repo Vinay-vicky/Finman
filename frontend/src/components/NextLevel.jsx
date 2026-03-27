@@ -3,6 +3,7 @@ import { Sparkles, TrendingUp, AlertTriangle, Wallet, Repeat, SlidersHorizontal,
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { AuthContext } from '../context/AuthContext';
 import { apiDownload, apiRequest } from '../services/api';
+import INRLoader from './INRLoader';
 
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
@@ -13,9 +14,15 @@ const ActionCard = ({ title, subtitle, icon: Icon, status, children }) => (
         <h3 className="text-white text-lg font-semibold">{title}</h3>
         <p className="text-slate-400 text-sm">{subtitle}</p>
         {status && (
-          <p className="text-[11px] mt-1 text-slate-500">
-            {status.loading ? 'Syncing…' : `Last updated: ${status.updatedAt || '—'}`}
-          </p>
+          status.loading ? (
+            <div className="mt-1 inline-flex items-center gap-2">
+              <INRLoader label="Syncing..." size="sm" compact />
+            </div>
+          ) : (
+            <p className="text-[11px] mt-1 text-slate-500">
+              {`Last updated: ${status.updatedAt || '—'}`}
+            </p>
+          )
         )}
       </div>
       <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -104,6 +111,15 @@ const NextLevel = () => {
   const [activeHousehold, setActiveHousehold] = useState(null);
   const [householdWorkspace, setHouseholdWorkspace] = useState(null);
   const [memberRoleDrafts, setMemberRoleDrafts] = useState({});
+  const [householdLimitDrafts, setHouseholdLimitDrafts] = useState({});
+  const [approvalFilter, setApprovalFilter] = useState('pending');
+  const [approvalRequestForm, setApprovalRequestForm] = useState({ amount: 0, title: 'Emergency Purchase', category: 'General', note: '' });
+  const [autoCategoryForm, setAutoCategoryForm] = useState({ title: 'SuperMart Purchase', amount: 450, selectedCategory: '' });
+  const [reconcileSourceLabel, setReconcileSourceLabel] = useState('bank-csv');
+  const [reconcileRowsText, setReconcileRowsText] = useState(JSON.stringify([
+    { title: 'SuperMart Purchase', amount: 450, type: 'expense', category: 'Groceries', date: new Date().toISOString().slice(0, 10) },
+    { title: 'Salary', amount: 50000, type: 'income', category: 'Salary', date: new Date().toISOString().slice(0, 10) },
+  ], null, 2));
   const [netWorthQuery, setNetWorthQuery] = useState({ page: 1, limit: 5, search: '', kind: '' });
   const [rulesQuery, setRulesQuery] = useState({ page: 1, limit: 5, search: '' });
   const [billsQuery, setBillsQuery] = useState({ page: 1, limit: 5, search: '' });
@@ -185,6 +201,10 @@ const NextLevel = () => {
       { id: 'bills', title: 'Bill Calendar Intelligence', icon: CalendarClock },
       { id: 'households', title: 'Family Spaces', icon: Users },
       { id: 'tax', title: 'Tax Workspace', icon: Receipt },
+      { id: 'health', title: 'Financial Health Score', icon: Target },
+      { id: 'autocategory', title: 'Smart Auto-Categorization', icon: BrainCircuit },
+      { id: 'reconcile', title: 'Statement Reconciliation', icon: Repeat },
+      { id: 'approval', title: 'Household Approval Workflow', icon: Users },
       { id: 'goals', title: 'Smart Goal Optimizer', icon: Target },
       { id: 'executive', title: 'Executive Brief', icon: Briefcase },
       { id: 'scenario', title: 'Scenario Lab', icon: Sparkles },
@@ -207,6 +227,8 @@ const NextLevel = () => {
   const loadRules = (query = rulesQuery) => callApi('rules', `/api/next-level/rules${qs(query)}`, {}, { error: false });
   const loadBills = (query = billsQuery) => callApi('bills', `/api/next-level/bills${qs(query)}`, {}, { error: false });
   const loadHouseholds = (query = householdsQuery) => callApi('households', `/api/next-level/households${qs(query)}`, {}, { error: false });
+  const loadHouseholdLimits = (householdId) => callApi('household-limits', `/api/next-level/households/${householdId}/limits`, {}, { error: false });
+  const loadHouseholdApprovals = (householdId, status = approvalFilter) => callApi('household-approvals', `/api/next-level/households/${householdId}/approvals${qs({ status })}`, {}, { error: false });
   const openHousehold = async (id) => {
     const data = await callApi('household-access', `/api/next-level/households/${id}`, {}, { error: 'Unable to open household.' });
     if (data) {
@@ -220,6 +242,15 @@ const NextLevel = () => {
         });
         setMemberRoleDrafts(drafts);
       }
+      const limits = await loadHouseholdLimits(id);
+      if (limits?.items) {
+        const drafts = {};
+        limits.items.forEach((l) => {
+          drafts[l.userId] = l.monthlyLimit;
+        });
+        setHouseholdLimitDrafts(drafts);
+      }
+      await loadHouseholdApprovals(id, approvalFilter);
       pushToast('success', `Opened household: ${data.name}`);
     }
   };
@@ -241,6 +272,86 @@ const NextLevel = () => {
         setHouseholdWorkspace(workspace);
       }
     }
+  };
+
+  const updateHouseholdMemberLimit = async (householdId, memberUserId) => {
+    const monthlyLimit = Number(householdLimitDrafts[memberUserId] || 0);
+    const saved = await callApi(
+      'household-limit-save',
+      `/api/next-level/households/${householdId}/limits/${memberUserId}`,
+      { method: 'PUT', body: { monthlyLimit } },
+      { success: 'Spending limit saved.' }
+    );
+
+    if (saved) {
+      const limits = await loadHouseholdLimits(householdId);
+      if (limits?.items) {
+        const drafts = {};
+        limits.items.forEach((l) => {
+          drafts[l.userId] = l.monthlyLimit;
+        });
+        setHouseholdLimitDrafts(drafts);
+      }
+    }
+  };
+
+  const createApprovalRequest = async () => {
+    if (!activeHousehold?.id) return;
+    const created = await callApi(
+      'household-approval-create',
+      '/api/next-level/households/approvals',
+      {
+        method: 'POST',
+        body: {
+          householdId: activeHousehold.id,
+          amount: Number(approvalRequestForm.amount || 0),
+          title: approvalRequestForm.title,
+          category: approvalRequestForm.category,
+          note: approvalRequestForm.note,
+        },
+      },
+      { success: 'Approval request submitted.' }
+    );
+
+    if (created) {
+      await loadHouseholdApprovals(activeHousehold.id, approvalFilter);
+      setApprovalRequestForm({ amount: 0, title: 'Emergency Purchase', category: 'General', note: '' });
+    }
+  };
+
+  const decideApproval = async (approvalId, decision) => {
+    if (!activeHousehold?.id) return;
+    const decided = await callApi(
+      'household-approval-decision',
+      `/api/next-level/households/approvals/${approvalId}`,
+      { method: 'PATCH', body: { decision, note: '' } },
+      { success: `Approval ${decision}.` }
+    );
+    if (decided) {
+      await loadHouseholdApprovals(activeHousehold.id, approvalFilter);
+    }
+  };
+
+  const runReconciliation = async () => {
+    let parsedRows;
+    try {
+      parsedRows = JSON.parse(reconcileRowsText);
+    } catch {
+      pushToast('error', 'Reconciliation rows must be valid JSON array.');
+      return;
+    }
+
+    if (!Array.isArray(parsedRows)) {
+      pushToast('error', 'Reconciliation rows JSON must be an array.');
+      return;
+    }
+
+    await callApi(
+      'reconcile',
+      '/api/next-level/statements/reconcile',
+      { method: 'POST', body: { sourceLabel: reconcileSourceLabel, rows: parsedRows } },
+      { success: 'Statement reconciliation completed.' }
+    );
   };
   const loadActivityTimeline = (query = activityQuery) => callApi('activity', `/api/next-level/activity${qs(query)}`, {}, { error: false });
   const loadActivityIntegrity = async () => {
@@ -737,6 +848,12 @@ const NextLevel = () => {
                 </ResponsiveContainer>
               </div>
               <p className="mt-2 text-xs text-slate-300">Average monthly net: <span className="text-emerald-300 font-semibold">{money(results.forecast.averageMonthlyNet)}</span></p>
+              <p className={`mt-1 text-xs ${results.forecast.riskLevel === 'high' ? 'text-red-300' : results.forecast.riskLevel === 'medium' ? 'text-amber-300' : 'text-emerald-300'}`}>
+                Risk: {String(results.forecast.riskLevel || 'low').toUpperCase()}
+                {results.forecast.daysToZero !== null && results.forecast.daysToZero !== undefined
+                  ? ` • Days to zero: ${results.forecast.daysToZero} (${results.forecast.zeroBalanceDate || 'n/a'})`
+                  : ' • Cash runway stable'}
+              </p>
             </>
           ) : (
             <EmptyState text="Run forecast to render trend chart." />
@@ -1243,6 +1360,7 @@ const NextLevel = () => {
                       <tr>
                         <th className="p-2 text-left">Member</th>
                         <th className="p-2 text-left">Role</th>
+                        <th className="p-2 text-left">Monthly Limit</th>
                         <th className="p-2 text-left">Actions</th>
                       </tr>
                     </thead>
@@ -1270,14 +1388,35 @@ const NextLevel = () => {
                               )}
                             </td>
                             <td className="p-2">
+                              {activeHousehold?.yourRole === 'owner' && Number(m.isOwner) !== 1 ? (
+                                <input
+                                  className="input-glass !py-1 !px-2"
+                                  type="number"
+                                  value={householdLimitDrafts[m.userId] ?? ''}
+                                  onChange={(e) => setHouseholdLimitDrafts((prev) => ({ ...prev, [m.userId]: Number(e.target.value || 0) }))}
+                                />
+                              ) : (
+                                <span>{money(householdLimitDrafts[m.userId] || 0)}</span>
+                              )}
+                            </td>
+                            <td className="p-2">
                               {canEdit ? (
-                                <button
-                                  className="btn-secondary !w-auto !py-1 !px-2 text-[11px]"
-                                  disabled={Boolean(activeLoads['household-member-role'])}
-                                  onClick={() => updateHouseholdMemberRole(activeHousehold.id, m.userId)}
-                                >
-                                  {activeLoads['household-member-role'] ? 'Saving…' : 'Save'}
-                                </button>
+                                <div className="flex gap-1">
+                                  <button
+                                    className="btn-secondary !w-auto !py-1 !px-2 text-[11px]"
+                                    disabled={Boolean(activeLoads['household-member-role'])}
+                                    onClick={() => updateHouseholdMemberRole(activeHousehold.id, m.userId)}
+                                  >
+                                    {activeLoads['household-member-role'] ? 'Saving…' : 'Role'}
+                                  </button>
+                                  <button
+                                    className="btn-secondary !w-auto !py-1 !px-2 text-[11px]"
+                                    disabled={Boolean(activeLoads['household-limit-save'])}
+                                    onClick={() => updateHouseholdMemberLimit(activeHousehold.id, m.userId)}
+                                  >
+                                    {activeLoads['household-limit-save'] ? 'Saving…' : 'Limit'}
+                                  </button>
+                                </div>
                               ) : (
                                 <span className="text-slate-400">—</span>
                               )}
@@ -1289,9 +1428,66 @@ const NextLevel = () => {
                   </table>
                 </div>
               )}
+
+              <div className="mt-3 rounded-lg border border-emerald-500/20 p-2">
+                <p className="font-semibold mb-2">Approval Workflow</p>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                  <input className="input-glass" type="number" placeholder="Amount" value={approvalRequestForm.amount} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, amount: Number(e.target.value || 0) }))} />
+                  <input className="input-glass" placeholder="Title" value={approvalRequestForm.title} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, title: e.target.value }))} />
+                  <input className="input-glass" placeholder="Category" value={approvalRequestForm.category} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, category: e.target.value }))} />
+                  <button className="btn-secondary" onClick={createApprovalRequest}>Request Approval</button>
+                </div>
+                <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <input className="input-glass md:col-span-2" placeholder="Note (optional)" value={approvalRequestForm.note} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, note: e.target.value }))} />
+                  <div className="flex gap-2">
+                    <select className="input-glass" value={approvalFilter} onChange={(e) => setApprovalFilter(e.target.value)}>
+                      <option value="pending">pending</option>
+                      <option value="approved">approved</option>
+                      <option value="rejected">rejected</option>
+                    </select>
+                    <button className="btn-secondary" onClick={() => loadHouseholdApprovals(activeHousehold.id, approvalFilter)}>Load</button>
+                  </div>
+                </div>
+
+                {Array.isArray(results['household-approvals']?.items) && (
+                  <div className="mt-2 overflow-auto rounded-lg border border-emerald-500/20">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-900/50 text-emerald-200">
+                        <tr>
+                          <th className="p-2 text-left">Requester</th>
+                          <th className="p-2 text-left">Title</th>
+                          <th className="p-2 text-right">Amount</th>
+                          <th className="p-2 text-left">Status</th>
+                          <th className="p-2 text-left">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {results['household-approvals'].items.map((a) => (
+                          <tr key={a.id} className="border-t border-emerald-500/10">
+                            <td className="p-2">{a.requesterUsername}</td>
+                            <td className="p-2">{a.title}</td>
+                            <td className="p-2 text-right">{money(a.amount)}</td>
+                            <td className="p-2 uppercase">{a.status}</td>
+                            <td className="p-2">
+                              {a.status === 'pending' && ['owner', 'editor'].includes(activeHousehold?.yourRole) ? (
+                                <div className="flex gap-1">
+                                  <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => decideApproval(a.id, 'approved')}>Approve</button>
+                                  <button className="btn-secondary !w-auto !py-1 !px-2 text-[11px]" onClick={() => decideApproval(a.id, 'rejected')}>Reject</button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
-          <ErrorState error={results.households?.error || results['household-create']?.error || results['household-join']?.error || results['household-access']?.error || results['household-members']?.error || results['household-member-role']?.error} />
+          <ErrorState error={results.households?.error || results['household-create']?.error || results['household-join']?.error || results['household-access']?.error || results['household-members']?.error || results['household-member-role']?.error || results['household-limit-save']?.error || results['household-approval-create']?.error || results['household-approval-decision']?.error || results['household-approvals']?.error} />
         </ActionCard>
 
         <ActionCard title="9) Tax Workspace" subtitle="Category-based annual tax summary" icon={Receipt}>
@@ -1316,6 +1512,85 @@ const NextLevel = () => {
             </div>
           ) : <EmptyState text="Generate yearly tax summary to populate this table." />}
           <ErrorState error={results.tax?.error} />
+        </ActionCard>
+
+        <ActionCard title="Financial Health Score" subtitle="Savings, debt, and net-worth strength" icon={Target} status={getStatus('healthscore')}>
+          <button className="btn-primary" onClick={() => callApi('healthscore', '/api/next-level/health/score')}>
+            {loadingKey === 'healthscore' ? 'Calculating…' : 'Compute Score'}
+          </button>
+          {results.healthscore?.score !== undefined ? (
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Score</p><p className="text-white font-semibold">{results.healthscore.score}/100</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Band</p><p className="text-emerald-300 font-semibold uppercase">{results.healthscore.band}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Savings Rate</p><p className="text-white font-semibold">{results.healthscore.metrics?.savingsRate}%</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Debt Ratio</p><p className="text-white font-semibold">{results.healthscore.metrics?.debtRatio}%</p></div>
+            </div>
+          ) : <EmptyState text="Compute score to view health insights." />}
+          <ErrorState error={results.healthscore?.error} />
+        </ActionCard>
+
+        <ActionCard title="Smart Auto-Categorization" subtitle="AI-assisted category suggestions with learning feedback" icon={BrainCircuit} status={getStatus('autocategory', 'autocategory-feedback')}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input className="input-glass" placeholder="Transaction title" value={autoCategoryForm.title} onChange={(e) => setAutoCategoryForm((p) => ({ ...p, title: e.target.value }))} />
+            <input className="input-glass" type="number" placeholder="Amount" value={autoCategoryForm.amount} onChange={(e) => setAutoCategoryForm((p) => ({ ...p, amount: Number(e.target.value || 0) }))} />
+            <button className="btn-primary" onClick={() => callApi('autocategory', `/api/next-level/autocategory/suggest${qs({ title: autoCategoryForm.title, amount: autoCategoryForm.amount })}`)}>Suggest</button>
+          </div>
+
+          {Array.isArray(results.autocategory?.suggestions) && (
+            <div className="mt-3 overflow-auto rounded-xl border border-slate-700">
+              <table className="w-full text-xs text-slate-300">
+                <thead className="bg-slate-900/70 text-slate-400"><tr><th className="p-2 text-left">Category</th><th className="p-2 text-right">Confidence</th><th className="p-2 text-left">Reasons</th></tr></thead>
+                <tbody>
+                  {results.autocategory.suggestions.map((s, idx) => (
+                    <tr key={`${s.category}-${idx}`} className="border-t border-slate-800"><td className="p-2">{s.category}</td><td className="p-2 text-right">{Math.round((s.confidence || 0) * 100)}%</td><td className="p-2">{(s.reasons || []).join(', ')}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input className="input-glass" placeholder="Selected category" value={autoCategoryForm.selectedCategory || results.autocategory?.suggested || ''} onChange={(e) => setAutoCategoryForm((p) => ({ ...p, selectedCategory: e.target.value }))} />
+            <button
+              className="btn-secondary"
+              onClick={() => callApi('autocategory-feedback', '/api/next-level/autocategory/feedback', {
+                method: 'POST',
+                body: {
+                  inputTitle: autoCategoryForm.title,
+                  suggestedCategory: results.autocategory?.suggested || null,
+                  selectedCategory: autoCategoryForm.selectedCategory || results.autocategory?.suggested || 'Other',
+                  confidence: Number(results.autocategory?.suggestions?.[0]?.confidence || 0),
+                  source: 'next-level-ui',
+                },
+              }, { success: 'Feedback saved for future suggestions.' })}
+            >Save Feedback</button>
+            <button className="btn-secondary" onClick={() => exportRows('autocategory-suggestions', results.autocategory?.suggestions || [], [
+              { label: 'Category', value: (r) => r.category },
+              { label: 'Confidence', value: (r) => r.confidence },
+              { label: 'Reasons', value: (r) => (r.reasons || []).join('|') },
+            ])}><Download size={14} className="inline mr-1" /> CSV</button>
+          </div>
+          <ErrorState error={results.autocategory?.error || results['autocategory-feedback']?.error} />
+        </ActionCard>
+
+        <ActionCard title="Statement Reconciliation" subtitle="Detect duplicates and import-safe new rows" icon={Repeat} status={getStatus('reconcile')}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input className="input-glass md:col-span-2" placeholder="Source label" value={reconcileSourceLabel} onChange={(e) => setReconcileSourceLabel(e.target.value)} />
+            <button className="btn-primary" onClick={runReconciliation}>{loadingKey === 'reconcile' ? 'Reconciling…' : 'Run Reconciliation'}</button>
+          </div>
+          <textarea
+            className="input-glass mt-2 min-h-[140px] font-mono text-xs"
+            value={reconcileRowsText}
+            onChange={(e) => setReconcileRowsText(e.target.value)}
+          />
+          {results.reconcile?.summary && (
+            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Total</p><p className="text-white font-semibold">{results.reconcile.total}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">New Rows</p><p className="text-emerald-300 font-semibold">{results.reconcile.summary.newRows}</p></div>
+              <div className="bg-slate-900/50 rounded-lg p-2 border border-slate-700"><p className="text-slate-400">Duplicates</p><p className="text-amber-300 font-semibold">{results.reconcile.summary.duplicateRows}</p></div>
+            </div>
+          )}
+          <ErrorState error={results.reconcile?.error} />
         </ActionCard>
 
         <ActionCard title="Activity Timeline" subtitle="Server-backed audit trail across sessions/devices" icon={CalendarClock} status={getStatus('activity', 'activity-integrity')}>

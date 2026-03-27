@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { Shield, Trash2, LogOut, Activity, RefreshCw, Smartphone } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { apiRequest } from '../services/api';
+import INRLoader from './INRLoader';
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -184,7 +185,9 @@ const Settings = () => {
         </div>
 
         {perfLoading ? (
-          <p className="text-slate-400 text-sm">Loading performance data...</p>
+          <div className="py-2">
+            <INRLoader label="Loading performance data..." size="sm" compact />
+          </div>
         ) : perfError ? (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
             <p className="text-amber-300 text-sm">{perfError}</p>
@@ -252,7 +255,9 @@ const Settings = () => {
         </div>
 
         {otpHealthLoading ? (
-          <p className="text-slate-400 text-sm">Loading OTP provider health...</p>
+          <div className="py-2">
+            <INRLoader label="Loading OTP provider health..." size="sm" compact />
+          </div>
         ) : otpHealthError ? (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
             <p className="text-amber-300 text-sm">{otpHealthError}</p>
@@ -317,7 +322,9 @@ const Settings = () => {
         </div>
 
         {loading ? (
-          <p className="text-slate-400 text-sm">Loading sessions...</p>
+          <div className="py-2">
+            <INRLoader label="Loading sessions..." size="sm" compact />
+          </div>
         ) : sessions.length === 0 ? (
           <p className="text-slate-500 text-sm">No sessions found.</p>
         ) : (

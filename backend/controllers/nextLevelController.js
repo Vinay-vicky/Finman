@@ -261,6 +261,118 @@ const getExecutiveBrief = async (req, res, next) => {
   }
 };
 
+const getFinancialHealthScore = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.getFinancialHealthScore(req.user.id);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getAutoCategorySuggestions = async (req, res, next) => {
+  try {
+    const title = req.query?.title || '';
+    const amount = Number(req.query?.amount || 0);
+    const data = await nextLevelService.getAutoCategorySuggestions(req.user.id, title, amount);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const submitAutoCategoryFeedback = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.submitAutoCategoryFeedback(req.user.id, req.body || {});
+    res.status(201).json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const reconcileStatementRows = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.reconcileStatementRows(req.user.id, req.body || {});
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const setHouseholdSpendingLimit = async (req, res, next) => {
+  try {
+    const householdId = Number(req.params.id);
+    const memberUserId = Number(req.params.memberId);
+    const monthlyLimit = Number(req.body?.monthlyLimit || 0);
+    const data = await nextLevelService.setHouseholdSpendingLimit(req.user.id, householdId, memberUserId, monthlyLimit);
+    res.json(data);
+  } catch (err) {
+    if (err.message === 'Household not found or inaccessible.' || err.message === 'Only household owner can set spending limits.') {
+      return next(new AppError(400, err.message));
+    }
+    return next(err);
+  }
+};
+
+const listHouseholdSpendingLimits = async (req, res, next) => {
+  try {
+    const householdId = Number(req.params.id);
+    const data = await nextLevelService.listHouseholdSpendingLimits(req.user.id, householdId);
+    res.json(data);
+  } catch (err) {
+    if (err.message === 'Household not found or inaccessible.') {
+      return next(new AppError(404, err.message));
+    }
+    return next(err);
+  }
+};
+
+const createHouseholdApprovalRequest = async (req, res, next) => {
+  try {
+    const data = await nextLevelService.createHouseholdApprovalRequest(req.user.id, req.body || {});
+    res.status(201).json(data);
+  } catch (err) {
+    if (err.message === 'Household not found or inaccessible.') {
+      return next(new AppError(404, err.message));
+    }
+    return next(err);
+  }
+};
+
+const listHouseholdApprovals = async (req, res, next) => {
+  try {
+    const householdId = Number(req.params.id);
+    const status = String(req.query?.status || '').trim();
+    const data = await nextLevelService.listHouseholdApprovals(req.user.id, householdId, status);
+    res.json(data);
+  } catch (err) {
+    if (err.message === 'Household not found or inaccessible.') {
+      return next(new AppError(404, err.message));
+    }
+    return next(err);
+  }
+};
+
+const decideHouseholdApproval = async (req, res, next) => {
+  try {
+    const approvalId = Number(req.params.approvalId);
+    const decision = String(req.body?.decision || '').trim();
+    const note = String(req.body?.note || '').trim();
+    const data = await nextLevelService.decideHouseholdApproval(req.user.id, approvalId, decision, note);
+    res.json(data);
+  } catch (err) {
+    if (
+      err.message === 'Approval request not found.'
+      || err.message === 'Approval request already decided.'
+      || err.message === 'Household not found or inaccessible.'
+      || err.message === 'Only household owner/editor can decide approvals.'
+    ) {
+      return next(new AppError(400, err.message));
+    }
+    return next(err);
+  }
+};
+
 const listActivityTimeline = async (req, res, next) => {
   try {
     const data = await nextLevelService.listActivityTimeline(req.user.id, req.query || {});
@@ -316,6 +428,15 @@ module.exports = {
   getTaxSummary,
   getGoalOptimizer,
   getExecutiveBrief,
+  getFinancialHealthScore,
+  getAutoCategorySuggestions,
+  submitAutoCategoryFeedback,
+  reconcileStatementRows,
+  setHouseholdSpendingLimit,
+  listHouseholdSpendingLimits,
+  createHouseholdApprovalRequest,
+  listHouseholdApprovals,
+  decideHouseholdApproval,
   listActivityTimeline,
   exportActivityTimeline,
   verifyActivityIntegrity,
