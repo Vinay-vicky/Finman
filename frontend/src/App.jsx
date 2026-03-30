@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useContext, lazy, Suspense, useCallback } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 import Navigation from './components/Navigation';
 import AnimatedBackground from './components/AnimatedBackground';
 import INRLoader from './components/INRLoader';
@@ -26,11 +29,44 @@ const prefetchMap = {
   nextLevel: () => import('./components/NextLevel'),
 };
 
+const getPrefetchPolicy = () => {
+  if (typeof navigator === 'undefined') {
+    return {
+      allowLightPrefetch: true,
+      allowHeavyPrefetch: true,
+    };
+  }
+
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const saveData = Boolean(connection?.saveData);
+  const effectiveType = String(connection?.effectiveType || '').toLowerCase();
+  const constrained = saveData || effectiveType.includes('2g');
+
+  return {
+    allowLightPrefetch: !constrained,
+    allowHeavyPrefetch: !constrained && !effectiveType.includes('3g'),
+  };
+};
+
 function App() {
+  const location = useLocation();
   const { user, token, loading: authLoading } = useContext(AuthContext);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(true);
+  const [dashboardInsights, setDashboardInsights] = useState({
+    loading: false,
+    error: null,
+    healthScore: null,
+    anomalyCount: 0,
+    topAnomalies: [],
+    upcomingBillsCount: 0,
+    upcomingBillsAmount: 0,
+    weeklyBrief: null,
+    defaultHouseholdId: null,
+    defaultHouseholdName: null,
+    lastUpdated: null,
+  });
 
   const prefetchRoute = useCallback((routeKey) => {
     const loader = prefetchMap[routeKey];
@@ -52,31 +88,124 @@ function App() {
     }
   };
 
+  const fetchDashboardInsights = useCallback(async () => {
+    if (!token || !user) return;
+
+    setDashboardInsights((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const [health, anomalies, bills, weeklyBrief, households] = await Promise.allSettled([
+        apiRequest('/api/next-level/health/score', { token }),
+        apiRequest('/api/next-level/transactions/anomalies', { token }),
+        apiRequest('/api/next-level/bills/upcoming?dueWithinDays=14', { token }),
+        apiRequest('/api/next-level/reports/weekly-brief', { token }),
+        apiRequest('/api/next-level/households?page=1&limit=1', { token }),
+      ]);
+
+      const healthScore = health.status === 'fulfilled' ? Number(health.value?.score ?? 0) : null;
+      const anomalyCount = anomalies.status === 'fulfilled'
+        ? Number(anomalies.value?.anomalies?.length || 0)
+        : 0;
+      const topAnomalies = anomalies.status === 'fulfilled'
+        ? (anomalies.value?.anomalies || [])
+          .slice()
+          .sort((a, b) => Number(b?.amount || 0) - Number(a?.amount || 0))
+          .slice(0, 3)
+        : [];
+      const billsList = bills.status === 'fulfilled' && Array.isArray(bills.value)
+        ? bills.value
+        : [];
+      const upcomingBillsAmount = billsList.reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+      const brief = weeklyBrief.status === 'fulfilled' ? weeklyBrief.value : null;
+      const firstHousehold = households.status === 'fulfilled'
+        ? (households.value?.items || [])[0] || null
+        : null;
+
+      setDashboardInsights({
+        loading: false,
+        error: null,
+        healthScore,
+        anomalyCount,
+        topAnomalies,
+        upcomingBillsCount: billsList.length,
+        upcomingBillsAmount,
+        weeklyBrief: brief,
+        defaultHouseholdId: firstHousehold?.id || null,
+        defaultHouseholdName: firstHousehold?.name || null,
+        lastUpdated: Date.now(),
+      });
+    } catch (err) {
+      setDashboardInsights((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || 'Unable to load integrated insights.',
+      }));
+    }
+  }, [token, user]);
+
   useEffect(() => {
     if (token) fetchTransactions();
     else setLoading(false);
   }, [token]);
 
   useEffect(() => {
+    if (!token || !user) return;
+
+    fetchDashboardInsights();
+    const timer = setInterval(fetchDashboardInsights, 180000);
+    return () => clearInterval(timer);
+  }, [token, user, fetchDashboardInsights]);
+
+  useEffect(() => {
     if (!user) return;
 
-    const idlePrefetch = () => {
+    const { allowLightPrefetch, allowHeavyPrefetch } = getPrefetchPolicy();
+    if (!allowLightPrefetch && !allowHeavyPrefetch) return;
+
+    const prefetchLightRoutes = () => {
       prefetchRoute('analytics');
       prefetchRoute('budgets');
       prefetchRoute('reports');
+    };
+
+    const prefetchHeavyRoutes = () => {
       prefetchRoute('calculators');
       prefetchRoute('settings');
       prefetchRoute('nextLevel');
     };
 
+    let idleId;
+    let heavyTimer;
+
     if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      const id = window.requestIdleCallback(idlePrefetch, { timeout: 1500 });
-      return () => window.cancelIdleCallback?.(id);
+      idleId = window.requestIdleCallback(prefetchLightRoutes, { timeout: 1500 });
+      if (allowHeavyPrefetch) {
+        heavyTimer = window.setTimeout(() => {
+          window.requestIdleCallback(prefetchHeavyRoutes, { timeout: 2500 });
+        }, 1800);
+      }
+      return () => {
+        window.cancelIdleCallback?.(idleId);
+        if (heavyTimer) window.clearTimeout(heavyTimer);
+      };
     }
 
-    const timer = setTimeout(idlePrefetch, 800);
-    return () => clearTimeout(timer);
+    const lightTimer = setTimeout(prefetchLightRoutes, 800);
+    if (allowHeavyPrefetch) {
+      heavyTimer = setTimeout(prefetchHeavyRoutes, 2600);
+    }
+    return () => {
+      clearTimeout(lightTimer);
+      if (heavyTimer) clearTimeout(heavyTimer);
+    };
   }, [user, prefetchRoute]);
+
+  useGSAP(() => {
+    gsap.fromTo(
+      '.route-shell',
+      { opacity: 0, y: 10 },
+      { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out', clearProps: 'all' }
+    );
+  }, { dependencies: [location.pathname] });
 
   const handleAddTransaction = async (newTx) => {
     try {
@@ -126,7 +255,7 @@ function App() {
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <AnimatedBackground />
+        <AnimatedBackground mode="loading" />
         <INRLoader label="Loading your workspace..." size="lg" />
       </div>
     );
@@ -135,7 +264,7 @@ function App() {
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
-        <AnimatedBackground />
+        <AnimatedBackground mode="auth" />
         <header className="mb-8 text-center">
           <h1 className="text-5xl md:text-6xl font-extrabold text-white mb-2 tracking-tight">
             FinMan
@@ -158,7 +287,7 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <AnimatedBackground />
+      <AnimatedBackground mode="app" />
       <div className="flex-1 w-full max-w-7xl mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6 lg:p-8">
         <Navigation onPrefetchRoute={prefetchRoute} />
         
@@ -169,7 +298,7 @@ function App() {
              </div>
           ) : (
             <Suspense fallback={<div className="py-10"><INRLoader label="Loading page..." size="sm" compact /></div>}>
-              <div className="animate-fade-in">
+              <div className="route-shell">
                 <Routes>
                   <Route path="/" element={
                     <Dashboard 
@@ -178,6 +307,8 @@ function App() {
                       onDeleteTransaction={handleDeleteTransaction}
                       onUpdateTransaction={handleUpdateTransaction}
                       onRefreshTransactions={fetchTransactions}
+                      dashboardInsights={dashboardInsights}
+                      onRefreshInsights={fetchDashboardInsights}
                     />
                   } />
                   <Route path="/analytics" element={<Analytics transactions={transactions} />} />

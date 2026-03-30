@@ -1,38 +1,57 @@
-import React, { useRef } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Sparkles, Stars } from '@react-three/drei';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
+import { useRenderProfile } from '../utils/renderProfile';
 
-const FinanceNodes = () => {
-  const groupRef = useRef();
+const ThreeFinanceScene = lazy(() => import('./ThreeFinanceScene'));
 
-  useFrame(({ clock }) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y = clock.getElapsedTime() * 0.05;
-      groupRef.current.rotation.x = clock.getElapsedTime() * 0.02;
+const AnimatedBackground = ({ mode = 'app' }) => {
+  const profile = useRenderProfile();
+  const [enableThree, setEnableThree] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (!profile.allowThreeBackground) {
+      setEnableThree(false);
+      return;
     }
-  });
 
-  return (
-    <group ref={groupRef}>
-      <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-      <Sparkles count={200} scale={20} size={2} speed={0.4} opacity={0.3} color="#34d399" />
-      <Sparkles count={200} scale={20} size={1.5} speed={0.4} opacity={0.3} color="#3b82f6" />
-    </group>
-  );
-};
+    const enable = () => setEnableThree(true);
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(enable, { timeout: 1200 });
+      return () => window.cancelIdleCallback?.(id);
+    }
 
-const AnimatedBackground = () => {
+    const timer = window.setTimeout(enable, 300);
+    return () => window.clearTimeout(timer);
+  }, [profile.allowThreeBackground]);
+
+  const gradientStrengthClass = mode === 'auth'
+    ? 'bg-blue-600/30 blur-[110px]'
+    : mode === 'loading'
+      ? 'bg-blue-600/16 blur-[100px]'
+      : 'bg-blue-600/20 blur-[120px]';
+
+  const accentStrengthClass = mode === 'auth'
+    ? 'bg-emerald-600/28 blur-[110px]'
+    : mode === 'loading'
+      ? 'bg-emerald-600/16 blur-[100px]'
+      : 'bg-emerald-600/20 blur-[120px]';
+
   return (
     <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none bg-slate-950">
       {/* Background Gradients */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-blue-600/20 blur-[120px]"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-600/20 blur-[120px]"></div>
+      <div className={`absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full ${gradientStrengthClass}`}></div>
+      <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full ${accentStrengthClass}`}></div>
+      <div className="absolute inset-0 opacity-[0.22]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(148,163,184,0.24) 1px, transparent 0)', backgroundSize: '22px 22px' }}></div>
       
-      {/* 3D Canvas */}
-      <Canvas camera={{ position: [0, 0, 10], fov: 60 }}>
-        <ambientLight intensity={0.5} />
-        <FinanceNodes />
-      </Canvas>
+      {/* 3D Canvas (progressively enabled) */}
+      {enableThree && (
+        <Suspense fallback={null}>
+          <div className="absolute inset-0">
+            <ThreeFinanceScene />
+          </div>
+        </Suspense>
+      )}
     </div>
   );
 };

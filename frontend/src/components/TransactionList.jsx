@@ -1,8 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Trash2, ArrowUpRight, ArrowDownRight, Search, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 import ConfirmModal from './ConfirmModal';
 
 const TransactionList = ({ transactions, onDelete, onEdit }) => {
+  const containerRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('date_desc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -55,8 +58,19 @@ const TransactionList = ({ transactions, onDelete, onEdit }) => {
     }, {});
   }, [paginatedTransactions, isDateSort]);
 
+  useGSAP(() => {
+    gsap.from('.tx-row', {
+      y: 10,
+      opacity: 0,
+      duration: 0.32,
+      stagger: 0.03,
+      ease: 'power2.out',
+      clearProps: 'all',
+    });
+  }, { scope: containerRef, dependencies: [currentPage, searchTerm, sortBy, paginatedTransactions.length] });
+
   const renderTransaction = (tx) => (
-    <div key={tx.id} className="group flex items-center justify-between p-4 bg-slate-800/40 border border-slate-700/50 rounded-xl hover:bg-slate-700/50 hover:border-slate-600 transition-all mb-2 last:mb-0 hover:shadow-lg hover:shadow-slate-900/20">
+    <div key={tx.id} className="tx-row group flex items-center justify-between p-4 bg-slate-800/40 border border-slate-700/50 rounded-xl hover:bg-slate-700/50 hover:border-slate-600 transition-all mb-2 last:mb-0 hover:shadow-lg hover:shadow-slate-900/20">
       <div className="flex flex-col flex-1">
         <span className="font-semibold text-white text-lg">{tx.title}</span>
         <span className="text-sm text-slate-400 mt-0.5">
@@ -87,7 +101,7 @@ const TransactionList = ({ transactions, onDelete, onEdit }) => {
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" ref={containerRef}>
       <ConfirmModal 
         isOpen={!!deleteId}
         title="Delete Transaction"

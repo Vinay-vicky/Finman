@@ -1,11 +1,13 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, TrendingUp, AlertTriangle, Wallet, Repeat, SlidersHorizontal, CalendarClock, Users, Receipt, Target, Briefcase, BrainCircuit, Pencil, Trash2, Download, X } from 'lucide-react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { AuthContext } from '../context/AuthContext';
 import { apiDownload, apiRequest } from '../services/api';
 import INRLoader from './INRLoader';
 
+const ForecastProjectionChart = lazy(() => import('./charts/ForecastProjectionChart'));
+
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const APPROVAL_DRAFT_KEY = 'finman_nextlevel_approval_draft';
 
 const ActionCard = ({ title, subtitle, icon: Icon, status, children }) => (
   <section className="glass-panel p-4 md:p-5 rounded-2xl border border-slate-700/50">
@@ -114,6 +116,7 @@ const NextLevel = () => {
   const [householdLimitDrafts, setHouseholdLimitDrafts] = useState({});
   const [approvalFilter, setApprovalFilter] = useState('pending');
   const [approvalRequestForm, setApprovalRequestForm] = useState({ amount: 0, title: 'Emergency Purchase', category: 'General', note: '' });
+  const [approvalDraftMeta, setApprovalDraftMeta] = useState({ source: null, importedAt: null, householdName: null });
   const [autoCategoryForm, setAutoCategoryForm] = useState({ title: 'SuperMart Purchase', amount: 450, selectedCategory: '' });
   const [receiptRawText, setReceiptRawText] = useState('STORE MART\nDate: 2026-03-27\nTOTAL ₹1,249.00\nGST ₹59.00');
   const [reconcileSourceLabel, setReconcileSourceLabel] = useState('bank-csv');
@@ -323,7 +326,19 @@ const NextLevel = () => {
   };
 
   const createApprovalRequest = async () => {
-    if (!activeHousehold?.id) return;
+    if (!activeHousehold?.id) {
+      pushToast('error', 'Open a household before creating an approval request.');
+      return false;
+    }
+    if (Number(approvalRequestForm.amount || 0) <= 0) {
+      pushToast('error', 'Approval amount must be greater than zero.');
+      return false;
+    }
+    if (!String(approvalRequestForm.title || '').trim() || !String(approvalRequestForm.category || '').trim()) {
+      pushToast('error', 'Approval title and category are required.');
+      return false;
+    }
+
     const created = await callApi(
       'household-approval-create',
       '/api/next-level/households/approvals',
@@ -343,7 +358,26 @@ const NextLevel = () => {
     if (created) {
       await loadHouseholdApprovals(activeHousehold.id, approvalFilter);
       setApprovalRequestForm({ amount: 0, title: 'Emergency Purchase', category: 'General', note: '' });
+      setApprovalDraftMeta({ source: null, importedAt: null, householdName: null });
+      return true;
     }
+
+    return false;
+  };
+
+  const isApprovalDraftReady = Boolean(
+    activeHousehold?.id
+    && Number(approvalRequestForm.amount || 0) > 0
+    && String(approvalRequestForm.title || '').trim()
+    && String(approvalRequestForm.category || '').trim()
+  );
+
+  const submitImportedDraft = async () => {
+    if (!isApprovalDraftReady) {
+      pushToast('error', 'Complete household, amount, title, and category before submitting the imported draft.');
+      return;
+    }
+    await createApprovalRequest();
   };
 
   const decideApproval = async (approvalId, decision) => {
@@ -488,6 +522,42 @@ const NextLevel = () => {
       // ignore storage issues
     }
   };
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(APPROVAL_DRAFT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      setApprovalRequestForm((prev) => ({
+        ...prev,
+        amount: Number(parsed?.amount || prev.amount || 0),
+        title: String(parsed?.title || prev.title || 'Emergency Purchase'),
+        category: String(parsed?.category || prev.category || 'General'),
+        note: String(parsed?.note || prev.note || ''),
+      }));
+
+      if (parsed?.householdId) {
+        openHousehold(Number(parsed.householdId)).catch(() => {
+          // ignore auto-open failure, user can select manually
+        });
+      }
+
+      setApprovalDraftMeta({
+        source: 'dashboard',
+        importedAt: Date.now(),
+        householdName: parsed?.householdName || null,
+      });
+
+      window.localStorage.removeItem(APPROVAL_DRAFT_KEY);
+      pushToast('success', parsed?.householdName
+        ? `Approval draft loaded for ${parsed.householdName}.`
+        : 'Approval draft loaded from dashboard anomaly signal.');
+    } catch {
+      // ignore malformed payload
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const loadActivityTimeline = (query = activityQuery) => callApi('activity', `/api/next-level/activity${qs(query)}`, {}, { error: false });
   const loadActivityIntegrity = async () => {
     const data = await apiRequest('/api/next-level/activity/integrity', { token });
@@ -994,15 +1064,9 @@ const NextLevel = () => {
           {Array.isArray(results.forecast?.projection) && results.forecast.projection.length > 0 ? (
             <>
               <div className="h-48 mt-3">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={results.forecast.projection}>
-                    <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                    <XAxis dataKey="monthOffset" stroke="#94a3b8" />
-                    <YAxis stroke="#94a3b8" />
-                    <Tooltip formatter={(value) => money(value)} />
-                    <Line type="monotone" dataKey="projectedBalance" stroke="#34d399" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<div className="h-full rounded-xl border border-slate-700/60 bg-slate-900/40" />}>
+                  <ForecastProjectionChart data={results.forecast.projection} formatter={money} />
+                </Suspense>
               </div>
               <p className="mt-2 text-xs text-slate-300">Average monthly net: <span className="text-emerald-300 font-semibold">{money(results.forecast.averageMonthlyNet)}</span></p>
               <p className={`mt-1 text-xs ${results.forecast.riskLevel === 'high' ? 'text-red-300' : results.forecast.riskLevel === 'medium' ? 'text-amber-300' : 'text-emerald-300'}`}>
@@ -1593,11 +1657,19 @@ const NextLevel = () => {
 
               <div className="mt-3 rounded-lg border border-emerald-500/20 p-2">
                 <p className="font-semibold mb-2">Approval Workflow</p>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                {approvalDraftMeta.source === 'dashboard' && (
+                  <div className={`mb-2 rounded-lg border px-2 py-1.5 text-[11px] ${isApprovalDraftReady ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-amber-500/30 bg-amber-500/10 text-amber-200'}`}>
+                    Imported draft from Dashboard {approvalDraftMeta.householdName ? `for ${approvalDraftMeta.householdName}` : ''}. {isApprovalDraftReady ? 'Ready to submit.' : 'Complete missing fields to submit.'}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
                   <input className="input-glass" type="number" placeholder="Amount" value={approvalRequestForm.amount} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, amount: Number(e.target.value || 0) }))} />
                   <input className="input-glass" placeholder="Title" value={approvalRequestForm.title} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, title: e.target.value }))} />
                   <input className="input-glass" placeholder="Category" value={approvalRequestForm.category} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, category: e.target.value }))} />
-                  <button className="btn-secondary" onClick={createApprovalRequest}>Request Approval</button>
+                  <button className="btn-secondary" disabled={Boolean(activeLoads['household-approval-create'])} onClick={createApprovalRequest}>{activeLoads['household-approval-create'] ? 'Submitting…' : 'Request Approval'}</button>
+                  <button className="btn-primary" disabled={approvalDraftMeta.source !== 'dashboard' || !isApprovalDraftReady || Boolean(activeLoads['household-approval-create'])} onClick={submitImportedDraft}>
+                    {activeLoads['household-approval-create'] ? 'Submitting…' : 'Submit Imported Draft'}
+                  </button>
                 </div>
                 <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
                   <input className="input-glass md:col-span-2" placeholder="Note (optional)" value={approvalRequestForm.note} onChange={(e) => setApprovalRequestForm((p) => ({ ...p, note: e.target.value }))} />

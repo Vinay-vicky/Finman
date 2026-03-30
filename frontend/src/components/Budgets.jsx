@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 import { AuthContext } from '../context/AuthContext';
 import { Target, Flag, Trash2, Plus, AlertTriangle, Tags } from 'lucide-react';
 import { apiRequest } from '../services/api';
@@ -6,6 +8,7 @@ import INRLoader from './INRLoader';
 
 const Budgets = () => {
   const { token } = useContext(AuthContext);
+  const containerRef = useRef(null);
 
   const [budgets, setBudgets] = useState([]);
   const [goals, setGoals] = useState([]);
@@ -53,6 +56,28 @@ const Budgets = () => {
   useEffect(() => {
     fetchData();
   }, [token]);
+
+  useGSAP(() => {
+    if (loading) return;
+
+    gsap.from('.budget-anim-card', {
+      y: 18,
+      opacity: 0,
+      duration: 0.5,
+      stagger: 0.05,
+      ease: 'power2.out',
+      clearProps: 'all',
+    });
+
+    gsap.utils.toArray('.budget-progress-fill').forEach((el) => {
+      const target = Number(el.getAttribute('data-width') || 0);
+      gsap.fromTo(
+        el,
+        { width: '0%' },
+        { width: `${target}%`, duration: 0.9, ease: 'power3.out' }
+      );
+    });
+  }, { scope: containerRef, dependencies: [loading, budgets.length, goals.length] });
 
   const addBudget = async (e) => {
     e.preventDefault();
@@ -151,14 +176,14 @@ const Budgets = () => {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="glass-panel shadow-none bg-transparent border-0 !p-0">
+    <div className="flex flex-col gap-6" ref={containerRef}>
+      <div className="budget-anim-card glass-panel shadow-none bg-transparent border-0 !p-0">
         <h2 className="text-2xl font-bold text-white tracking-tight mb-2">Budgets, Goals & Categories</h2>
         <p className="text-slate-400 text-sm">Set limits, monitor alerts, and manage transaction categories</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="glass-panel p-6 flex flex-col gap-6">
+        <div className="budget-anim-card glass-panel p-6 flex flex-col gap-6">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Target size={24} className="text-blue-400" /> Monthly Budgets
           </h2>
@@ -196,7 +221,7 @@ const Budgets = () => {
               const isOver = spent > b.amount;
               const alert = getBudgetAlert(spent, b.amount);
               return (
-                <div key={b.id} className="relative group p-4 bg-slate-800/40 rounded-xl border border-slate-700/50 hover:bg-slate-700/40 transition-all">
+                <div key={b.id} className="budget-anim-card relative group p-4 bg-slate-800/40 rounded-xl border border-slate-700/50 hover:bg-slate-700/40 transition-all">
                   <button
                     onClick={() => deleteItem('budget', b.id)}
                     className="absolute top-4 right-4 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -214,7 +239,7 @@ const Budgets = () => {
                     </div>
                   </div>
                   <div className="h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700/30">
-                    <div className={`h-full rounded-full transition-all duration-700 ease-out ${isOver ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${percent}%` }}></div>
+                    <div className={`budget-progress-fill h-full rounded-full transition-all duration-700 ease-out ${isOver ? 'bg-red-500' : 'bg-blue-500'}`} data-width={percent} style={{ width: `${percent}%` }}></div>
                   </div>
                   <p className={`text-xs mt-2 font-medium flex items-center gap-1 ${alert.color}`}>{alert.icon}{alert.label}</p>
                 </div>
@@ -223,7 +248,7 @@ const Budgets = () => {
           </div>
         </div>
 
-        <div className="glass-panel p-6 flex flex-col gap-6">
+        <div className="budget-anim-card glass-panel p-6 flex flex-col gap-6">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Flag size={24} className="text-emerald-400" /> Savings Goals
           </h2>
@@ -274,7 +299,7 @@ const Budgets = () => {
               }
 
               return (
-                <div key={g.id} className="relative group p-4 bg-slate-800/40 rounded-xl border border-slate-700/50 hover:bg-slate-700/40 transition-all">
+                <div key={g.id} className="budget-anim-card relative group p-4 bg-slate-800/40 rounded-xl border border-slate-700/50 hover:bg-slate-700/40 transition-all">
                   <button
                     onClick={() => deleteItem('goal', g.id)}
                     className="absolute top-4 right-4 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -292,7 +317,7 @@ const Budgets = () => {
                     </div>
                   </div>
                   <div className="h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700/30">
-                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-700 ease-out" style={{ width: `${percent}%` }}></div>
+                    <div className="budget-progress-fill h-full bg-emerald-500 rounded-full transition-all duration-700 ease-out" data-width={percent} style={{ width: `${percent}%` }}></div>
                   </div>
                   <p className="text-xs text-slate-300 mt-2">Remaining: ₹{remaining.toFixed(2)}</p>
                   {g.deadline && (
@@ -307,7 +332,7 @@ const Budgets = () => {
         </div>
       </div>
 
-      <div className="glass-panel p-6 flex flex-col gap-4">
+      <div className="budget-anim-card glass-panel p-6 flex flex-col gap-4">
         <h3 className="text-lg font-bold text-white flex items-center gap-2"><Tags size={18} className="text-violet-400" /> Category Management</h3>
 
         <form onSubmit={addCategory} className="grid grid-cols-1 md:grid-cols-4 gap-3">

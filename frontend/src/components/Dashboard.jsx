@@ -5,7 +5,7 @@ import TransactionForm from './TransactionForm';
 import TransactionList from './TransactionList';
 import CalendarPicker from './CalendarPicker';
 import RecurringManager from './RecurringManager';
-import { Calendar, PlusCircle, Star, Clock3, ArrowRight } from 'lucide-react';
+import { Calendar, PlusCircle, Star, Clock3, ArrowRight, ShieldCheck, AlertTriangle, CalendarClock, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const calcMeta = {
@@ -41,10 +41,11 @@ const getLocalArray = (key) => {
   }
 };
 
-const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpdateTransaction, onRefreshTransactions }) => {
+const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpdateTransaction, onRefreshTransactions, dashboardInsights, onRefreshInsights }) => {
   const navigate = useNavigate();
   const containerRef = useRef(null);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [animatedTotals, setAnimatedTotals] = useState({ balance: 0, income: 0, expense: 0 });
 
   useGSAP(() => {
     gsap.from('.dashboard-item', {
@@ -56,6 +57,50 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
       clearProps: 'all' // prevents conflict with hover transforms
     });
   }, { scope: containerRef });
+
+  useEffect(() => {
+    const tiles = containerRef.current?.querySelectorAll('.tilt-card') || [];
+    const cleanups = [];
+
+    tiles.forEach((tile) => {
+      const onMove = (event) => {
+        const rect = tile.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) - 0.5;
+        const y = ((event.clientY - rect.top) / rect.height) - 0.5;
+
+        gsap.to(tile, {
+          rotateY: x * 5,
+          rotateX: y * -5,
+          y: -3,
+          duration: 0.22,
+          ease: 'power2.out',
+          transformPerspective: 800,
+          transformOrigin: 'center',
+        });
+      };
+
+      const onLeave = () => {
+        gsap.to(tile, {
+          rotateY: 0,
+          rotateX: 0,
+          y: 0,
+          duration: 0.35,
+          ease: 'power2.out',
+        });
+      };
+
+      tile.addEventListener('mousemove', onMove);
+      tile.addEventListener('mouseleave', onLeave);
+      cleanups.push(() => {
+        tile.removeEventListener('mousemove', onMove);
+        tile.removeEventListener('mouseleave', onLeave);
+      });
+    });
+
+    return () => {
+      cleanups.forEach((fn) => fn());
+    };
+  }, []);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [filterMode, setFilterMode] = useState('date'); // 'date', 'week', 'month', 'year', 'all'
@@ -142,6 +187,32 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
     
   const balance = totalIncome - totalExpense;
 
+  useEffect(() => {
+    const tweenState = {
+      balance: animatedTotals.balance,
+      income: animatedTotals.income,
+      expense: animatedTotals.expense,
+    };
+
+    const tween = gsap.to(tweenState, {
+      balance,
+      income: totalIncome,
+      expense: totalExpense,
+      duration: 0.9,
+      ease: 'power2.out',
+      onUpdate: () => {
+        setAnimatedTotals({
+          balance: tweenState.balance,
+          income: tweenState.income,
+          expense: tweenState.expense,
+        });
+      },
+    });
+
+    return () => tween.kill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [balance, totalIncome, totalExpense]);
+
   const handleUpdate = async (updatedTransaction) => {
     try {
       await onUpdateTransaction(updatedTransaction);
@@ -171,6 +242,56 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
     hour: '2-digit',
     minute: '2-digit'
   });
+
+  const insightsUpdatedLabel = dashboardInsights?.lastUpdated
+    ? new Date(dashboardInsights.lastUpdated).toLocaleTimeString()
+    : '—';
+
+  const topAnomalies = Array.isArray(dashboardInsights?.topAnomalies) ? dashboardInsights.topAnomalies : [];
+  const weeklyBrief = dashboardInsights?.weeklyBrief;
+
+  const exportWeeklyBrief = () => {
+    if (!weeklyBrief) return;
+    const lines = [
+      'FinMan Weekly CFO Brief',
+      `Generated: ${new Date().toLocaleString('en-IN')}`,
+      '',
+      `Headline: ${weeklyBrief.headline || 'N/A'}`,
+      `Summary: ${weeklyBrief.summary || 'N/A'}`,
+      `Risk Level: ${weeklyBrief.riskLevel || 'N/A'}`,
+      `Cashflow Trend: ${weeklyBrief.cashflowTrend || 'N/A'}`,
+      `Top Category: ${weeklyBrief.topCategory || 'N/A'}`,
+      `Action Item: ${weeklyBrief.actionItem || 'N/A'}`,
+    ];
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `weekly-cfo-brief-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const createApprovalDraft = (anomaly) => {
+    const payload = {
+      amount: Number(anomaly?.amount || 0),
+      title: anomaly?.title || 'Flagged Expense',
+      category: anomaly?.category || 'General',
+      note: `Raised from Dashboard anomaly signal (${new Date().toLocaleString('en-IN')}).`,
+      householdId: dashboardInsights?.defaultHouseholdId || null,
+      householdName: dashboardInsights?.defaultHouseholdName || null,
+    };
+
+    try {
+      window.localStorage.setItem('finman_nextlevel_approval_draft', JSON.stringify(payload));
+    } catch {
+      // ignore storage failures
+    }
+    navigate('/next-level');
+  };
 
   return (
     <div className="flex flex-col gap-6" ref={containerRef}>
@@ -292,39 +413,140 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
       {/* Balance Cards with 3D Effect */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Total Balance Card */}
-        <div className="dashboard-item glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-900/30">
+        <div className="dashboard-item tilt-card glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-900/30">
           <div className="absolute inset-0 bg-gradient-to-br from-slate-700/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 transition-transform duration-500">
             <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18v1a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1h-9a2 2 0 00-2 2v8a2 2 0 002 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
           </div>
           <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-2">Total Balance</p>
           <p className={`text-4xl font-extrabold ${balance >= 0 ? 'text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'text-red-400 drop-shadow-[0_0_20px_rgba(248,113,113,0.2)]'}`}>
-            {formatCurrency(balance)}
+            {formatCurrency(animatedTotals.balance)}
           </p>
         </div>
 
         {/* Total Income Card */}
-        <div className="dashboard-item glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-900/20">
+        <div className="dashboard-item tilt-card glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-900/20">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-700/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 transition-transform duration-500 text-emerald-500">
             <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2zm0 3.8l7.5 15H4.5L12 5.8z"/></svg>
           </div>
           <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-2">Total Income</p>
           <p className="text-4xl font-extrabold text-emerald-400 drop-shadow-[0_0_20px_rgba(52,211,153,0.4)]">
-            {formatCurrency(totalIncome)}
+            {formatCurrency(animatedTotals.income)}
           </p>
         </div>
 
         {/* Total Expense Card */}
-        <div className="dashboard-item glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-red-900/20">
+        <div className="dashboard-item tilt-card glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-red-900/20">
           <div className="absolute inset-0 bg-gradient-to-br from-red-700/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 transition-transform duration-500 text-red-500">
             <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 22L2 2h20L12 22zm0-3.8l7.5-15H4.5L12 18.2z"/></svg>
           </div>
           <p className="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-2">Total Expense</p>
           <p className="text-4xl font-extrabold text-red-400 drop-shadow-[0_0_20px_rgba(248,113,113,0.4)]">
-            {formatCurrency(totalExpense)}
+            {formatCurrency(animatedTotals.expense)}
           </p>
+        </div>
+      </div>
+
+      <div className="dashboard-item glass-panel p-5 rounded-2xl border border-cyan-500/20">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-lg font-semibold text-white">Integrated Intelligence</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Live signals from Next-Level APIs inside your main dashboard.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onRefreshInsights}
+              disabled={Boolean(dashboardInsights?.loading)}
+              className="px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-600 text-slate-200 text-sm font-semibold hover:bg-slate-700/80 disabled:opacity-60"
+            >
+              {dashboardInsights?.loading ? 'Refreshing…' : 'Refresh Signals'}
+            </button>
+            <button
+              onClick={() => navigate('/next-level')}
+              className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold flex items-center gap-1"
+            >
+              Open Next-Level <ArrowRight size={14} />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+            <p className="text-xs text-emerald-200 flex items-center gap-1 mb-1"><ShieldCheck size={12} /> Health Score</p>
+            <p className="text-2xl font-extrabold text-emerald-300">{dashboardInsights?.healthScore ?? '—'}</p>
+            <p className="text-[11px] text-emerald-200/80">/100 financial fitness</p>
+          </div>
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+            <p className="text-xs text-amber-200 flex items-center gap-1 mb-1"><AlertTriangle size={12} /> Spending Anomalies</p>
+            <p className="text-2xl font-extrabold text-amber-300">{Number(dashboardInsights?.anomalyCount || 0)}</p>
+            <p className="text-[11px] text-amber-200/80">flagged in latest detection</p>
+          </div>
+          <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3">
+            <p className="text-xs text-cyan-200 flex items-center gap-1 mb-1"><CalendarClock size={12} /> Upcoming Bills (14d)</p>
+            <p className="text-2xl font-extrabold text-cyan-300">{Number(dashboardInsights?.upcomingBillsCount || 0)}</p>
+            <p className="text-[11px] text-cyan-200/80">₹{Number(dashboardInsights?.upcomingBillsAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} due</p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 xl:grid-cols-2 gap-3">
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs text-amber-200 font-semibold">Top anomaly actions</p>
+              <button className="text-[11px] text-amber-200 hover:text-white" onClick={() => navigate('/next-level')}>View all</button>
+            </div>
+            {topAnomalies.length === 0 ? (
+              <p className="text-xs text-slate-400">No flagged anomalies in the latest scan.</p>
+            ) : (
+              <div className="space-y-2">
+                {topAnomalies.map((item, idx) => (
+                  <div key={`${item.id || item.title}-${idx}`} className="rounded-lg border border-amber-500/20 bg-slate-900/50 px-2 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs text-slate-100 font-medium truncate">{item.title}</p>
+                        <p className="text-[11px] text-slate-400">{item.category || 'General'} • ₹{Number(item.amount || 0).toLocaleString('en-IN')}</p>
+                        <p className="text-[10px] text-cyan-200/80">Target household: {dashboardInsights?.defaultHouseholdName || 'Select in Next-Level'}</p>
+                      </div>
+                      <button
+                        className="px-2 py-1 rounded-md border border-cyan-500/40 bg-cyan-500/15 text-cyan-200 text-[11px] hover:bg-cyan-500/25"
+                        onClick={() => createApprovalDraft(item)}
+                      >
+                        Approval Draft
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs text-violet-200 font-semibold">Weekly CFO brief</p>
+              <button
+                className="px-2 py-1 rounded-md border border-violet-500/40 bg-violet-500/15 text-violet-200 text-[11px] hover:bg-violet-500/25 flex items-center gap-1"
+                onClick={exportWeeklyBrief}
+                disabled={!weeklyBrief}
+              >
+                <Download size={12} /> Export
+              </button>
+            </div>
+            {weeklyBrief ? (
+              <>
+                <p className="text-sm text-white font-semibold">{weeklyBrief.headline || 'Weekly snapshot ready'}</p>
+                <p className="text-xs text-slate-300 mt-1">{weeklyBrief.summary || 'No summary available.'}</p>
+                <p className="text-[11px] text-violet-200 mt-2">Action: {weeklyBrief.actionItem || 'Review anomalies and tighten recurring spends.'}</p>
+              </>
+            ) : (
+              <p className="text-xs text-slate-400">Weekly brief will appear after insight refresh.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+          <span>Last updated: {insightsUpdatedLabel}</span>
+          {dashboardInsights?.error ? <span className="text-red-300">{dashboardInsights.error}</span> : <span className="text-slate-500">Signals auto-refresh every 3 minutes.</span>}
         </div>
       </div>
 

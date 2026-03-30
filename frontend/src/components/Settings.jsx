@@ -3,6 +3,7 @@ import { Shield, Trash2, LogOut, Activity, RefreshCw, Smartphone } from 'lucide-
 import { AuthContext } from '../context/AuthContext';
 import { apiRequest } from '../services/api';
 import INRLoader from './INRLoader';
+import { VISUAL_EFFECTS_KEY } from '../utils/renderProfile';
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -58,6 +59,13 @@ const Settings = () => {
   const [otpHealthError, setOtpHealthError] = useState(null);
   const [lastOtpHealthRefreshAt, setLastOtpHealthRefreshAt] = useState(null);
   const otpStatus = getOtpHealthStatus(otpHealth);
+  const [reduceEffects, setReduceEffects] = useState(() => {
+    try {
+      return window.localStorage.getItem(VISUAL_EFFECTS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
 
   const loadSessions = async () => {
     if (!token) {
@@ -154,6 +162,17 @@ const Settings = () => {
       logout();
     } catch (err) {
       alert(err.message || 'Failed to logout all sessions.');
+    }
+  };
+
+  const toggleVisualEffects = () => {
+    const next = !reduceEffects;
+    setReduceEffects(next);
+    try {
+      window.localStorage.setItem(VISUAL_EFFECTS_KEY, next ? '1' : '0');
+      window.dispatchEvent(new Event('storage'));
+    } catch {
+      // ignore
     }
   };
 
@@ -358,6 +377,24 @@ const Settings = () => {
           <button onClick={logoutAll} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-semibold flex items-center gap-2">
             <LogOut size={16} /> Logout All Devices
           </button>
+        </div>
+      </div>
+
+      <div className="glass-panel p-6">
+        <h3 className="text-lg font-semibold text-white mb-2">Visual Effects</h3>
+        <p className="text-slate-400 text-sm mb-3">Control high-fidelity 3D effects for performance/accessibility.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={toggleVisualEffects}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${
+              reduceEffects
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-200'
+                : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
+            }`}
+          >
+            {reduceEffects ? 'Reduced Effects: ON' : 'Reduced Effects: OFF'}
+          </button>
+          <span className="text-xs text-slate-500">Applies to background 3D, auth accents, and enhanced loaders.</span>
         </div>
       </div>
     </div>

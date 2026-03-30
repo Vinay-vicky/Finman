@@ -14,11 +14,15 @@
   .btn-primary {
     @apply inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/20 px-3 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60;
     min-height: 42px;
+    position: relative;
+    overflow: hidden;
   }
 
   .btn-secondary {
     @apply inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-slate-600/70 bg-slate-800/80 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700/80 disabled:cursor-not-allowed disabled:opacity-60;
     min-height: 42px;
+    position: relative;
+    overflow: hidden;
   }
 }
 
@@ -180,6 +184,35 @@ button, input, select, textarea {
   @apply transition-all duration-200 ease-out;
 }
 
+.btn-primary,
+.btn-secondary {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.btn-primary:active,
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.btn-primary::after,
+.btn-secondary::after {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 62%);
+  transform: scale(0.5);
+  transition: transform 320ms ease, opacity 320ms ease;
+}
+
+.btn-primary:active::after,
+.btn-secondary:active::after {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
 /* Enhanced card effects */
 .card-hover {
   @apply transform transition-all duration-300 hover:scale-105 hover:shadow-2xl;
@@ -239,6 +272,15 @@ button, input, select, textarea {
   }
   50% {
     filter: drop-shadow(0 0 22px rgba(16, 185, 129, 0.58));
+  }
+}
+
+@keyframes inr-loader-ring {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
   }
 }
 
@@ -319,10 +361,35 @@ button, input, select, textarea {
   background: linear-gradient(180deg, rgba(16,185,129,0.35), rgba(6,95,70,0.45));
 }
 
+.inr-loader-coin--enhanced .inr-loader-face {
+  background: radial-gradient(circle at 25% 22%, rgba(255,255,255,0.45), rgba(255,255,255,0.05) 36%), linear-gradient(140deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.88));
+  border-color: rgba(52, 211, 153, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), 0 0 26px rgba(16,185,129,0.26);
+}
+
+.inr-loader-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 135%;
+  height: 135%;
+  border-radius: 999px;
+  border: 1px dashed rgba(52, 211, 153, 0.36);
+  animation: inr-loader-ring 2.4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .inr-loader-wrap,
-  .inr-loader-coin {
+  .inr-loader-coin,
+  .inr-loader-ring {
     animation: none !important;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-primary::after,
+  .btn-secondary::after {
+    transition: none !important;
   }
 }
 

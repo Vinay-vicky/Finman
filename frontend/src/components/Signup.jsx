@@ -1,11 +1,15 @@
-import React, { useState, useContext } from 'react';
+import React, { lazy, Suspense, useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 import { apiRequest } from '../services/api';
 import CountryCodePicker from './CountryCodePicker';
+import { useRenderProfile } from '../utils/renderProfile';
+
+const AuthAccent3D = lazy(() => import('./AuthAccent3D'));
 
 const Signup = ({ onSwitch }) => {
   const { login } = useContext(AuthContext);
+  const profile = useRenderProfile();
   const [countryCode, setCountryCode] = useState('+91');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +53,14 @@ const Signup = ({ onSwitch }) => {
   return (
     <div className="glass-panel w-full p-8 md:p-10">
       <h2 className="text-2xl font-bold text-white mb-6 text-center">Create Account</h2>
+
+      {profile.allowAuthAccent && (
+        <div className="mb-6">
+          <Suspense fallback={null}>
+            <AuthAccent3D />
+          </Suspense>
+        </div>
+      )}
       
       {error && (
         <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg mb-6 text-sm text-center">

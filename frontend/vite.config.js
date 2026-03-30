@@ -8,6 +8,7 @@ export default defineConfig({
     include: ['react', 'react-dom', 'react-router-dom'],
   },
   build: {
+    chunkSizeWarningLimit: 750,
     modulePreload: {
       polyfill: true,
     },
@@ -23,6 +24,9 @@ export default defineConfig({
           if (id.includes('/src/components/Dashboard')) return 'route-dashboard';
 
           if (id.includes('node_modules')) {
+            if (id.includes('/three/')) return 'three-core';
+            if (id.includes('@react-three/fiber') || id.includes('@react-three/drei')) return 'three-react';
+            if (id.includes('/gsap/') || id.includes('@gsap/react')) return 'motion';
             if (id.includes('recharts')) return 'charts';
             if (id.includes('@react-oauth/google')) return 'auth';
             if (id.includes('lucide-react')) return 'icons';
