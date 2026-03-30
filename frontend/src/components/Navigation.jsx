@@ -1,5 +1,7 @@
 import React, { useContext } from 'react';
 import { NavLink } from 'react-router-dom';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 import { LayoutDashboard, PieChart, Target, FileText, Calculator, Shield, Rocket, Moon, Sun, LogOut } from 'lucide-react';
 import { ThemeContext } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
@@ -8,8 +10,28 @@ const Navigation = ({ onPrefetchRoute }) => {
   const { theme, toggleTheme } = useContext(ThemeContext);
   const { logout, user } = useContext(AuthContext);
 
+  useGSAP(() => {
+    gsap.from('.nav-item-desktop', {
+      x: -30,
+      opacity: 0,
+      duration: 0.6,
+      stagger: 0.08,
+      ease: 'power3.out',
+      clearProps: 'all'
+    });
+
+    gsap.from('.nav-item-mobile', {
+      y: 20,
+      opacity: 0,
+      duration: 0.4,
+      stagger: 0.05,
+      ease: 'back.out(1.2)',
+      clearProps: 'all'
+    });
+  });
+
   const getNavLinkClass = ({ isActive }) => {
-    return `flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+    return `nav-item-desktop flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
       isActive 
         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]' 
         : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
@@ -60,7 +82,7 @@ const Navigation = ({ onPrefetchRoute }) => {
             {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />} 
             {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           </button> */}
-          <button onClick={logout} className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-500/10 hover:text-red-400 transition-all font-medium w-full text-left">
+          <button onClick={logout} className="nav-item-desktop flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-500/10 hover:text-red-400 transition-all font-medium w-full text-left">
             <LogOut size={20} /> Logout
           </button>
         </div>
@@ -68,28 +90,28 @@ const Navigation = ({ onPrefetchRoute }) => {
 
       {/* Mobile Bottom Bar */}
       <nav className="glass-panel md:hidden fixed bottom-0 left-0 right-0 z-50 rounded-b-none border-b-0 border-x-0 !p-2 flex items-center justify-around h-16 pointer-events-auto">
-        <NavLink to="/" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`} end>
+        <NavLink to="/" className={({isActive}) => `nav-item-mobile p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`} end>
           <LayoutDashboard size={22} className="mb-1" />
         </NavLink>
-        <NavLink to="/analytics" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+        <NavLink to="/analytics" className={({isActive}) => `nav-item-mobile p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <PieChart size={22} className="mb-1" />
         </NavLink>
-        <NavLink to="/budgets" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+        <NavLink to="/budgets" className={({isActive}) => `nav-item-mobile p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <Target size={22} className="mb-1" />
         </NavLink>
-        <NavLink to="/reports" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+        <NavLink to="/reports" className={({isActive}) => `nav-item-mobile p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <FileText size={22} className="mb-1" />
         </NavLink>
-        <NavLink to="/calculators" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+        <NavLink to="/calculators" className={({isActive}) => `nav-item-mobile p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <Calculator size={22} className="mb-1" />
         </NavLink>
-        <NavLink to="/settings" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+        <NavLink to="/settings" className={({isActive}) => `nav-item-mobile p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <Shield size={22} className="mb-1" />
         </NavLink>
-        <NavLink to="/next-level" className={({isActive}) => `p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
+        <NavLink to="/next-level" className={({isActive}) => `nav-item-mobile p-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'}`}>
           <Rocket size={22} className="mb-1" />
         </NavLink>
-        <button onClick={logout} className="p-3 rounded-xl text-slate-400 hover:text-red-400 transition-all">
+        <button onClick={logout} className="nav-item-mobile p-3 rounded-xl text-slate-400 hover:text-red-400 transition-all">
           <LogOut size={22} className="mb-1" />
         </button>
       </nav>

@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 import TransactionForm from './TransactionForm';
 import TransactionList from './TransactionList';
 import CalendarPicker from './CalendarPicker';
@@ -20,6 +22,7 @@ const calcMeta = {
   autoLoan: 'Auto Loan Calculator',
   ccMinimum: 'Credit Card Minimum',
   discountTax: 'Discount & Tax',
+  
   irrNpv: 'IRR / NPV Calculator',
   percentage: 'Percentage Calculator',
   bond: 'Bond Calculator',
@@ -40,7 +43,19 @@ const getLocalArray = (key) => {
 
 const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpdateTransaction, onRefreshTransactions }) => {
   const navigate = useNavigate();
+  const containerRef = useRef(null);
   const [showCalendar, setShowCalendar] = useState(false);
+
+  useGSAP(() => {
+    gsap.from('.dashboard-item', {
+      y: 40,
+      opacity: 0,
+      duration: 0.8,
+      stagger: 0.1,
+      ease: 'power3.out',
+      clearProps: 'all' // prevents conflict with hover transforms
+    });
+  }, { scope: containerRef });
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [filterMode, setFilterMode] = useState('date'); // 'date', 'week', 'month', 'year', 'all'
@@ -158,10 +173,10 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
   });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6" ref={containerRef}>
       
       {/* Header and Calendar Picker */}
-      <div className="glass-panel p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-slate-600/50 transition-colors">
+      <div className="dashboard-item glass-panel p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-slate-600/50 transition-colors">
         <div>
           <h2 className="text-2xl font-bold text-white tracking-tight">Financial Overview</h2>
           <p className="text-slate-400 text-sm mt-1">Track your spending and income</p>
@@ -217,7 +232,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
       )}
 
       {/* Calculator Shortcuts */}
-      <div className="glass-panel p-5 rounded-2xl">
+      <div className="dashboard-item glass-panel p-5 rounded-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div>
             <h3 className="text-lg font-semibold text-white">Quick Calculator Shortcuts</h3>
@@ -277,7 +292,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
       {/* Balance Cards with 3D Effect */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Total Balance Card */}
-        <div className="glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-900/30">
+        <div className="dashboard-item glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-900/30">
           <div className="absolute inset-0 bg-gradient-to-br from-slate-700/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 transition-transform duration-500">
             <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M21 18v1a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1h-9a2 2 0 00-2 2v8a2 2 0 002 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
@@ -289,7 +304,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
         </div>
 
         {/* Total Income Card */}
-        <div className="glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-900/20">
+        <div className="dashboard-item glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-900/20">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-700/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 transition-transform duration-500 text-emerald-500">
             <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2zm0 3.8l7.5 15H4.5L12 5.8z"/></svg>
@@ -301,7 +316,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
         </div>
 
         {/* Total Expense Card */}
-        <div className="glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-red-900/20">
+        <div className="dashboard-item glass-panel p-6 relative overflow-hidden group rounded-2xl transform transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-red-900/20">
           <div className="absolute inset-0 bg-gradient-to-br from-red-700/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-110 transition-transform duration-500 text-red-500">
             <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 22L2 2h20L12 22zm0-3.8l7.5-15H4.5L12 18.2z"/></svg>
@@ -315,7 +330,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
 
       {/* Main Grid: Form + List */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-6 items-start">
-        <div>
+        <div className="dashboard-item">
           <div id="quick-add-form" className="sticky top-6">
             <TransactionForm 
               onAdd={onAddTransaction}
@@ -327,7 +342,7 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
           </div>
           <RecurringManager onRefreshTransactions={onRefreshTransactions} />
         </div>
-        <div className="glass-panel p-6 rounded-2xl">
+        <div className="dashboard-item glass-panel p-6 rounded-2xl">
           <TransactionList 
             transactions={filteredTransactions} 
             onDelete={onDeleteTransaction}
