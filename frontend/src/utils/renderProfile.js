@@ -22,8 +22,8 @@ export const getRenderProfile = () => {
   const lowMemory = typeof navigator !== 'undefined' && Number(navigator.deviceMemory || 8) <= 4;
   const lowCpu = typeof navigator !== 'undefined' && Number(navigator.hardwareConcurrency || 8) <= 4;
 
-  const allowThreeBackground = !(reducedMotion || reduceEffects || isMobile || lowMemory || lowCpu);
-  const allowAuthAccent = !(reducedMotion || reduceEffects || isMobile || lowMemory);
+  const allowThreeBackground = !(reducedMotion || reduceEffects || lowMemory || lowCpu);
+  const allowAuthAccent = !(reducedMotion || reduceEffects || lowMemory);
   const allowEnhancedLoader = !(reducedMotion || reduceEffects || lowMemory);
 
   return {

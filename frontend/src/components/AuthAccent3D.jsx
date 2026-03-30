@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Sparkles } from '@react-three/drei';
+import { useRenderProfile } from '../utils/renderProfile';
 
 const AccentMesh = () => {
   const ringRef = useRef(null);
@@ -34,9 +35,11 @@ const AccentMesh = () => {
 };
 
 const AuthAccent3D = () => {
+  const profile = useRenderProfile();
+
   return (
     <div className="h-28 w-full rounded-xl border border-slate-700/50 bg-slate-900/40 overflow-hidden">
-      <Canvas camera={{ position: [0, 0, 4], fov: 58 }} dpr={[1, 1.5]} gl={{ antialias: false, powerPreference: 'low-power' }}>
+      <Canvas camera={{ position: [0, 0, 4], fov: 58 }} dpr={profile.isMobile ? [1, 1.2] : [1, 1.5]} gl={{ antialias: false, powerPreference: 'low-power' }}>
         <ambientLight intensity={0.4} />
         <pointLight position={[2, 2, 3]} color="#34d399" intensity={1.2} />
         <pointLight position={[-2, -1, -2]} color="#3b82f6" intensity={0.7} />

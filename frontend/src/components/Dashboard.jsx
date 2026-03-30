@@ -63,10 +63,10 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
     const cleanups = [];
 
     tiles.forEach((tile) => {
-      const onMove = (event) => {
+      const animateTile = (clientX, clientY) => {
         const rect = tile.getBoundingClientRect();
-        const x = ((event.clientX - rect.left) / rect.width) - 0.5;
-        const y = ((event.clientY - rect.top) / rect.height) - 0.5;
+        const x = ((clientX - rect.left) / rect.width) - 0.5;
+        const y = ((clientY - rect.top) / rect.height) - 0.5;
 
         gsap.to(tile, {
           rotateY: x * 5,
@@ -77,6 +77,22 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
           transformPerspective: 800,
           transformOrigin: 'center',
         });
+      };
+
+      const onMove = (event) => {
+        animateTile(event.clientX, event.clientY);
+      };
+
+      const onTouchStart = (event) => {
+        const touch = event.touches?.[0];
+        if (!touch) return;
+        animateTile(touch.clientX, touch.clientY);
+      };
+
+      const onTouchMove = (event) => {
+        const touch = event.touches?.[0];
+        if (!touch) return;
+        animateTile(touch.clientX, touch.clientY);
       };
 
       const onLeave = () => {
@@ -91,9 +107,15 @@ const Dashboard = ({ transactions, onAddTransaction, onDeleteTransaction, onUpda
 
       tile.addEventListener('mousemove', onMove);
       tile.addEventListener('mouseleave', onLeave);
+      tile.addEventListener('touchstart', onTouchStart, { passive: true });
+      tile.addEventListener('touchmove', onTouchMove, { passive: true });
+      tile.addEventListener('touchend', onLeave);
       cleanups.push(() => {
         tile.removeEventListener('mousemove', onMove);
         tile.removeEventListener('mouseleave', onLeave);
+        tile.removeEventListener('touchstart', onTouchStart);
+        tile.removeEventListener('touchmove', onTouchMove);
+        tile.removeEventListener('touchend', onLeave);
       });
     });
 

@@ -1,6 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Sparkles, Stars } from '@react-three/drei';
+import { useRenderProfile } from '../utils/renderProfile';
 
 const CoinSwarm = () => {
   const groupRef = useRef(null);
@@ -47,10 +48,13 @@ const CoinSwarm = () => {
 };
 
 const ThreeFinanceScene = () => {
+  const profile = useRenderProfile();
+  const isMobile = profile.isMobile;
+
   return (
     <Canvas
       camera={{ position: [0, 0, 12], fov: 56 }}
-      dpr={[1, 1.5]}
+      dpr={isMobile ? [1, 1.2] : [1, 1.5]}
       gl={{ antialias: false, powerPreference: 'low-power', alpha: true }}
       performance={{ min: 0.5 }}
     >
@@ -58,9 +62,9 @@ const ThreeFinanceScene = () => {
       <pointLight position={[2, 3, 4]} intensity={1.15} color="#34d399" />
       <pointLight position={[-3, -2, -2]} intensity={0.7} color="#3b82f6" />
       <CoinSwarm />
-      <Stars radius={95} depth={45} count={1300} factor={3} saturation={0} fade speed={0.5} />
-      <Sparkles count={100} scale={16} size={1.8} speed={0.3} opacity={0.26} color="#34d399" />
-      <Sparkles count={90} scale={16} size={1.2} speed={0.24} opacity={0.2} color="#3b82f6" />
+      <Stars radius={95} depth={45} count={isMobile ? 600 : 1300} factor={3} saturation={0} fade speed={0.5} />
+      <Sparkles count={isMobile ? 45 : 100} scale={16} size={1.8} speed={0.3} opacity={0.26} color="#34d399" />
+      <Sparkles count={isMobile ? 36 : 90} scale={16} size={1.2} speed={0.24} opacity={0.2} color="#3b82f6" />
     </Canvas>
   );
 };
